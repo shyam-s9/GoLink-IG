@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
 const helmet = require('helmet');
-const db = require('./db'); // This is your database connection
+const db = require('./db'); // Database connection
 const { messageQueue } = require('./queue');
 require('dotenv').config();
 
@@ -16,7 +16,7 @@ const io = new Server(server, {
     }
 });
 
-// --- EMERGENCY TABLE CREATOR (The Fix) ---
+// --- EMERGENCY TABLE CREATOR ---
 const initializeDatabase = async () => {
     try {
         console.log("Checking Database Tables...");
@@ -30,7 +30,6 @@ const initializeDatabase = async () => {
             );
         `);
         
-        // Add a default trigger for testing if the table is empty
         const checkData = await db.query('SELECT COUNT(*) FROM Reels_Automation');
         if (parseInt(checkData.rows[0].count) === 0) {
             await db.query(`
@@ -45,13 +44,12 @@ const initializeDatabase = async () => {
     }
 };
 initializeDatabase();
-// ------------------------------------------
 
-// Redis Subscriber for Real-Time Dashboard Events
+// Redis Subscriber
 const redisSub = new Redis(process.env.REDIS_URL);
 redisSub.subscribe('lead-health-update', (err, count) => {
     if (err) console.error("Redis Subscribe Error:", err.message);
-    else console.log(`Subscribed to ${count} channels. Listening for updates...`);
+    else console.log(`Subscribed to ${count} channels.`);
 });
 
 redisSub.on('message', (channel, message) => {
@@ -63,7 +61,44 @@ redisSub.on('message', (channel, message) => {
 });
 
 app.use(express.json());
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: false, // Allows the inline dashboard style to load
+}));
+
+// --- MOBILE DASHBOARD INTERFACE ---
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>EMW | CricketShaam Bot</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .card { background: #1e293b; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; width: 85%; max-width: 400px; border: 1px solid #334155; }
+                .logo { color: #38bdf8; font-weight: 800; font-size: 1.5rem; margin-bottom: 0.5rem; }
+                .status-badge { display: inline-block; background: #064e3b; color: #34d399; padding: 5px 15px; border-radius: 50px; font-size: 0.8rem; font-weight: bold; margin-bottom: 1.5rem; border: 1px solid #059669; }
+                .info { background: #0f172a; padding: 15px; border-radius: 12px; text-align: left; font-size: 0.9rem; line-height: 1.6; }
+                .footer { margin-top: 1.5rem; font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="logo">EXTREME MEDIA WORLD</div>
+                <div class="status-badge">● SYSTEM ONLINE</div>
+                <div class="info">
+                    <strong>Project:</strong> @CricketShaam Automation<br>
+                    <strong>Database:</strong> Connected ✅<br>
+                    <strong>Webhook:</strong> Active 🟢<br>
+                    <strong>Keyword:</strong> "LINK"
+                </div>
+                <div class="footer">Build in Public v1.0</div>
+            </div>
+        </body>
+        </html>
+    `);
+});
 
 // GET: The Handshake
 app.get('/webhook/instagram', (req, res) => {
@@ -94,8 +129,6 @@ app.post('/webhook/instagram', async (req, res) => {
         const creatorIgId = event.id;
 
         try {
-            // Updated query: Removed reel_id check temporarily to test all comments, 
-            // OR ensure you have the correct reel_id in DB.
             const configQuery = await db.query(
                 'SELECT * FROM Reels_Automation WHERE is_enabled = true'
             );
@@ -113,8 +146,7 @@ app.post('/webhook/instagram', async (req, res) => {
                         commentText: text
                     }, { delay: Math.floor(Math.random() * (5000 - 2000) + 2000) });
                     
-                    console.log(`[WEBHOOK]: Incoming comment detected: ${text}`);
-                    console.log(`[QUEUE]: Job added for keyword match: ${config.trigger_keyword}`);
+                    console.log(`[WEBHOOK]: Incoming comment: ${text}`);
                 }
             }
         } catch (error) { 
@@ -123,7 +155,7 @@ app.post('/webhook/instagram', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 10000; // Default to Render's preferred port
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`Socket.io Server listening on port ${PORT}`);
+    console.log(`Server listening on port ${PORT}`);
 });
