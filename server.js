@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
 const helmet = require('helmet');
-const db = require('./db');
+const db = require('./db'); // This is your database connection
 const { messageQueue } = require('./queue');
 require('dotenv').config();
 
@@ -15,6 +15,37 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
+
+// --- EMERGENCY TABLE CREATOR (The Fix) ---
+const initializeDatabase = async () => {
+    try {
+        console.log("Checking Database Tables...");
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS Reels_Automation (
+                id SERIAL PRIMARY KEY,
+                reel_id VARCHAR(255),
+                trigger_keyword VARCHAR(100),
+                affiliate_link TEXT,
+                is_enabled BOOLEAN DEFAULT true
+            );
+        `);
+        
+        // Add a default trigger for testing if the table is empty
+        const checkData = await db.query('SELECT COUNT(*) FROM Reels_Automation');
+        if (parseInt(checkData.rows[0].count) === 0) {
+            await db.query(`
+                INSERT INTO Reels_Automation (trigger_keyword, affiliate_link)
+                VALUES ('LINK', 'https://extrememediaworld.com');
+            `);
+            console.log("✅ Default trigger 'LINK' added to Database.");
+        }
+        console.log("✅ Database Schema is Ready.");
+    } catch (err) {
+        console.error("❌ Database Initialization Error:", err.message);
+    }
+};
+initializeDatabase();
+// ------------------------------------------
 
 // Redis Subscriber for Real-Time Dashboard Events
 const redisSub = new Redis(process.env.REDIS_URL);
@@ -31,11 +62,10 @@ redisSub.on('message', (channel, message) => {
     }
 });
 
-// Using standard express json parser since we removed the custom middleware
 app.use(express.json());
 app.use(helmet());
 
-// GET: The "Handshake" - This is what Meta needs to verify your URL
+// GET: The Handshake
 app.get('/webhook/instagram', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -49,10 +79,10 @@ app.get('/webhook/instagram', (req, res) => {
     }
 });
 
-// POST: The "Logic" - This processes incoming comments
+// POST: The Logic
 app.post('/webhook/instagram', async (req, res) => {
     const { entry } = req.body;
-    res.sendStatus(200); // Always respond fast to Meta
+    res.sendStatus(200); 
     
     if (!entry) return;
 
@@ -64,7 +94,12 @@ app.post('/webhook/instagram', async (req, res) => {
         const creatorIgId = event.id;
 
         try {
-            const configQuery = await db.query('SELECT * FROM Reels_Automation WHERE reel_id = $1 AND is_enabled = true', [media_id]);
+            // Updated query: Removed reel_id check temporarily to test all comments, 
+            // OR ensure you have the correct reel_id in DB.
+            const configQuery = await db.query(
+                'SELECT * FROM Reels_Automation WHERE is_enabled = true'
+            );
+
             if (configQuery.rows.length === 0) continue;
 
             for (let config of configQuery.rows) {
@@ -77,6 +112,8 @@ app.post('/webhook/instagram', async (req, res) => {
                         automationId: config.id,
                         commentText: text
                     }, { delay: Math.floor(Math.random() * (5000 - 2000) + 2000) });
+                    
+                    console.log(`[WEBHOOK]: Incoming comment detected: ${text}`);
                     console.log(`[QUEUE]: Job added for keyword match: ${config.trigger_keyword}`);
                 }
             }
@@ -86,7 +123,7 @@ app.post('/webhook/instagram', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000; // Default to Render's preferred port
 server.listen(PORT, () => {
     console.log(`Socket.io Server listening on port ${PORT}`);
 });
