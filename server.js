@@ -5,8 +5,6 @@ const Redis = require('ioredis');
 const helmet = require('helmet');
 const db = require('./db');
 const { messageQueue } = require('./queue');
-const { validateWebhookSignature, captureRawBody } = require('./middleware/auth');
-require('./jobs/tokenRefresh');
 require('dotenv').config();
 
 const app = express();
@@ -33,28 +31,42 @@ redisSub.on('message', (channel, message) => {
     }
 });
 
-app.use(express.json({ verify: captureRawBody }));
+// Using standard express json parser since we removed the custom middleware
+app.use(express.json());
 app.use(helmet());
 
+// GET: The "Handshake" - This is what Meta needs to verify your URL
 app.get('/webhook/instagram', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-    if (mode && token === process.env.FB_VERIFY_TOKEN) res.status(200).send(challenge);
-    else res.sendStatus(403);
+    
+    if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
+        console.log('[WEBHOOK]: Verification Successful');
+        res.status(200).send(challenge);
+    } else {
+        res.sendStatus(403);
+    }
 });
 
-app.post('/webhook/instagram', validateWebhookSignature, async (req, res) => {
+// POST: The "Logic" - This processes incoming comments
+app.post('/webhook/instagram', async (req, res) => {
     const { entry } = req.body;
-    res.sendStatus(200);
+    res.sendStatus(200); // Always respond fast to Meta
+    
+    if (!entry) return;
+
     for (let event of entry) {
         const commentData = event.changes?.[0]?.value;
         if (!commentData) continue;
+        
         const { id: commentId, text, from, media_id } = commentData;
         const creatorIgId = event.id;
+
         try {
             const configQuery = await db.query('SELECT * FROM Reels_Automation WHERE reel_id = $1 AND is_enabled = true', [media_id]);
             if (configQuery.rows.length === 0) continue;
+
             for (let config of configQuery.rows) {
                 if (text.toLowerCase().includes(config.trigger_keyword.toLowerCase())) {
                     await messageQueue.add('process-dm', {
@@ -65,9 +77,12 @@ app.post('/webhook/instagram', validateWebhookSignature, async (req, res) => {
                         automationId: config.id,
                         commentText: text
                     }, { delay: Math.floor(Math.random() * (5000 - 2000) + 2000) });
+                    console.log(`[QUEUE]: Job added for keyword match: ${config.trigger_keyword}`);
                 }
             }
-        } catch (error) { console.error('Webhook error:', error.message); }
+        } catch (error) { 
+            console.error('Webhook processing error:', error.message); 
+        }
     }
 });
 
