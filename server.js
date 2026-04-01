@@ -50,7 +50,28 @@ const initializeDatabase = async () => {
         console.error("❌ DB Error:", err.message);
     }
 };
-initializeDatabase();
+
+// --- BOOTSTRAP MASTER ACCOUNT (Account Safety) ---
+const bootstrapMasterAccount = async () => {
+    const masterToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    const masterId = "17841477997409764"; // Hardcoded from user request
+    if (masterToken) {
+        try {
+            const encrypted = encrypt(masterToken);
+            await db.query(
+                `INSERT INTO Users (platform_user_id, full_name, access_token) 
+                 VALUES ($1, $2, $3) 
+                 ON CONFLICT (platform_user_id) DO UPDATE SET access_token = $3`,
+                [masterId, "Master Admin", encrypted]
+            );
+            console.log("✅ Master Account 17841477997409764 Bootstrapped.");
+        } catch (err) {
+            console.error("❌ Bootstrap Error:", err.message);
+        }
+    }
+};
+
+initializeDatabase().then(() => bootstrapMasterAccount());
 
 // Redis Subscriber for Real-Time Activity Feed
 const redisSub = new Redis(process.env.REDIS_URL);
