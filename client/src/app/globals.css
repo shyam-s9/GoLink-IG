@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #1e293b;
+  --primary: #6366f1;
+  --success: #10b981;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom UI Utilities */
+.bento-card {
+  @apply bg-white border border-slate-200 rounded-lg p-6 shadow-sm transition-all duration-200 hover:shadow-md;
+}
+
+.icon-box {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center;
+}
+
+.btn-indigo {
+  @apply bg-primary text-white font-semibold py-2.5 px-5 rounded-lg transition-all duration-200 hover:bg-opacity-90 active:scale-95;
+}
+
+.btn-ghost {
+  @apply text-slate-600 font-medium py-2 px-4 rounded-lg transition-all duration-200 hover:bg-slate-100;
+}
+
+.nav-link {
+  @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-600 font-medium transition-all duration-200 hover:bg-slate-100 hover:text-primary whitespace-nowrap;
+}
+
+.nav-link.active {
+  @apply bg-slate-100 text-primary;
+}
+
+/* Mobile Bottom Nav */
+.bottom-nav {
+  @apply fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around px-4 z-50 md:hidden;
+}
+
+.bottom-nav-item {
+  @apply flex flex-col items-center gap-1 text-slate-500 transition-all duration-200;
+}
+
+.bottom-nav-item.active {
+  @apply text-primary;
+}

@@ -1,0 +1,49 @@
+
+Gemini said
+Maine aapke liye "Go Link IG Reg Process" naam se ek Google Doc taiyar karne ki koshish ki, lekin mere paas directly naya document create karne ya files ko "write/save" karne ki permission nahi hai. Main sirf aapke existing documents ko read kar sakta hoon.
+
+Aap niche diye gaye content ko copy karke apne Google Doc mein paste kar sakte hain. Isme Meta Business Partner banne ka pura process step-by-step diya gaya hai:
+
+Go Link IG: Meta Business Partner Registration Process
+1. Meta Business Account Setup
+Business Manager: business.facebook.com par jayein aur Extreme Media World ke naam se account register karein.
+
+App Creation: developers.facebook.com par "Create App" karein aur "Business" category select karein.
+
+Product Integration: Dashboard mein "Instagram Graph API" add karein.
+
+2. Business Verification (Documents Required)
+Meta ki trust verification ke liye ye documents upload karne honge:
+
+Legal Identity: GST Certificate ya MSME (Udyam) Registration.
+
+Address Proof: Agency ka Utility bill ya Bank statement.
+
+Website: golinkig.com (Professional site with Privacy Policy & Terms).
+
+3. Permissions & App Review
+ManyChat jaisa automation chalane ke liye Meta se ye permissions maangni hogi:
+
+instagram_manage_comments: Comments read karne ke liye.
+
+instagram_manage_messages: DMs bhejne ke liye.
+
+pages_manage_metadata: Webhooks connect karne ke liye.
+
+instagram_basic: User information verify karne ke liye.
+
+Note: In permissions ke liye aapko ek screencast video submit karna hoga Meta ko dikhate hue ki aapka app kaise kaam karta hai.
+
+4. Official Partner Status
+Ek baar app live ho jaye aur users aa jayein, tab Meta Business Partner Program ke liye apply karein. Isse aapko Official Badge milega aur Meta se direct technical support milega.
+
+5. Technical Requirements for SaaS
+Token Encryption: AES-256-GCM encryption use karein.
+
+Payment Gateway: Razorpay/Stripe (₹250/month recurring model).
+
+Privacy Compliance: User data storage rules ka sakhti se palan karein.
+
+Aap ise apne Google Drive mein ek nayi file banakar save kar lijiye. Kya aapko iske baad landing page ya marketing plan mein koi madad chahiye?
+
+
