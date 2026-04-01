@@ -399,14 +399,23 @@ app.get('/auth/instagram', (req, res) => {
     res.redirect(url);
 });
 
+// --- 3. WEBHOOKS (Diagnostics Added) ---
 app.get('/webhook/instagram', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
+
+    console.log("--- WEBHOOK VERIFICATION ATTEMPT ---");
+    console.log("Mode:", mode);
+    console.log("Token Received:", token);
+    console.log("Expected Token (Render):", process.env.FB_VERIFY_TOKEN);
+
     if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
+        console.log("✅ Webhook Verification SUCCESS.");
         res.status(200).send(challenge);
     } else {
-        res.sendStatus(403);
+        console.error("❌ Webhook Verification FAILED. Token mismatch or missing.");
+        res.status(403).send('Verification failed');
     }
 });
 
