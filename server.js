@@ -308,12 +308,13 @@ app.get('/', (req, res) => {
 
             <div class="container legal-content" id="deletion-view">
                 <span class="back-btn" onclick="showView('main-view')">← Back to Dashboard</span>
-                <h1>Data Deletion Instructions</h1>
-                <p>To request deletion of your data from GoLink IG, proceed with one of the following:</p>
+                <h1>Data Deletion & Deauthorize</h1>
+                <p>To request deletion of your data or deauthorize the app, proceed with one of the following:</p>
                 <h2>Option A: Manual Request</h2>
-                <p>Email <strong>shyam52404@gmail.com</strong> with your Instagram Handle and the subject "DATA DELETION REQUEST". Our DPO will purge your records within 24 hours.</p>
-                <h2>Option B: Revoke Access</h2>
-                <p>Go to your Facebook Profile -> Settings & Privacy -> Apps and Websites -> GoLink IG -> Remove.</p>
+                <p>Email <strong>shyam52404@gmail.com</strong> with your handle and the subject "DATA DELETION REQUEST".</p>
+                <h2>Option B: Meta Platform Settings</h2>
+                <p>Go to your Facebook/Instagram Settings -> Apps and Websites -> GoLink Auto -> Remove.</p>
+                <p style="margin-top: 2rem; font-size: 0.8rem; color: var(--text-dim);">Callback URL: https://golink-ig.onrender.com/</p>
             </div>
 
             <footer>
@@ -354,7 +355,10 @@ app.get('/', (req, res) => {
 
 // --- 2. LOGIC ROUTES (OAuth, Webhooks) ---
 app.get('/auth/instagram', (req, res) => {
-    res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?client_id=${process.env.FB_APP_ID}&redirect_uri=${process.env.BACKEND_URL}/auth/callback&scope=instagram_basic,instagram_manage_comments,instagram_manage_messages,pages_show_list,pages_read_engagement&response_type=code`);
+    const scopes = 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights';
+    const redirectUri = `${process.env.BACKEND_URL}/auth/callback`;
+    const url = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=${process.env.FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scopes}`;
+    res.redirect(url);
 });
 
 app.get('/webhook/instagram', (req, res) => {
