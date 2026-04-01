@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Users Table (Creators)
 CREATE TABLE Users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    ig_user_id VARCHAR UNIQUE NOT NULL,
+    platform_user_id VARCHAR UNIQUE NOT NULL,
     full_name VARCHAR,
     access_token TEXT NOT NULL, -- Encrypted (AES-256-GCM)
     is_active BOOLEAN DEFAULT true,
@@ -36,7 +36,7 @@ CREATE TABLE Subscriptions (
 CREATE TABLE Analytics (
     id SERIAL PRIMARY KEY,
     automation_id INTEGER REFERENCES Reels_Automation(id),
-    follower_ig_id VARCHAR,
+    follower_platform_id VARCHAR,
     action_type VARCHAR, -- 'DM_SENT' or 'FOLLOW_REQUIRED' or 'PUBLIC_REPLY'
     sentiment_score FLOAT, -- [NEW]
     sentiment_label VARCHAR, -- [NEW] 'positive', 'neutral', 'negative'
@@ -47,10 +47,10 @@ CREATE TABLE Analytics (
 CREATE TABLE Leads (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES Users(id),
-    ig_handle VARCHAR,
+    platform_handle VARCHAR,
     email VARCHAR,
     lead_score INTEGER DEFAULT 0,
-    source VARCHAR DEFAULT 'INSTAGRAM_REEL',
+    source VARCHAR DEFAULT 'AUTOMATION_TRIGGER',
     status VARCHAR DEFAULT 'NEW', -- 'NEW', 'QUALIFIED', 'LOST'
     created_at TIMESTAMP DEFAULT NOW()
 );

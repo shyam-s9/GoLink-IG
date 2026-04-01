@@ -1,7 +1,7 @@
 {
-  "name": "golink-ig",
+  "name": "golink-auto",
   "version": "1.0.0",
-  "description": "Instagram Automation for Extreme Media World",
+  "description": "Platform Automation for GoLink Auto",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -13,6 +13,14 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
+
+// --- CRITICAL SECURITY & CONNECTION LOGGING ---
+if (!process.env.FB_APP_ID) {
+    console.error("❌ CRITICAL ERROR: FB_APP_ID is missing from your environment variables!");
+    console.error("Please add FB_APP_ID to your .env file or Render settings. Current ID:", process.env.FB_APP_ID);
+} else {
+    console.log("✅ OAuth Connected. FB_APP_ID Initialized.");
+}
 // --- DATABASE INITIALIZATION ---
 const initializeDatabase = async () => {
     try {
@@ -21,7 +29,7 @@ const initializeDatabase = async () => {
             CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
             CREATE TABLE IF NOT EXISTS Users (
                 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                ig_user_id VARCHAR UNIQUE NOT NULL,
+                platform_user_id VARCHAR UNIQUE NOT NULL,
                 full_name VARCHAR,
                 access_token TEXT NOT NULL,
                 is_active BOOLEAN DEFAULT true,
@@ -66,7 +74,7 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Extreme Media World | Premium Automation</title>
+            <title>GoLink Auto | Premium Automation</title>
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
             <style>
                 :root {
@@ -212,17 +220,17 @@ app.get('/', (req, res) => {
                 <header>
                     <div class="status-pill">
                         <span class="status-dot"></span>
-                        Extreme Media World Active
+                        GoLink Auto System Operational
                     </div>
-                    <div class="logo">GO LINK IG</div>
-                    <p style="color: var(--text-dim); margin-top: 0.5rem;">Next-Gen Instagram Automation</p>
+                    <div class="logo">GO LINK AUTO</div>
+                    <p style="color: var(--text-dim); margin-top: 0.5rem;">Professional Platform Automation</p>
                 </header>
 
                 <div class="main-grid">
                     <div class="glass-card hero-content">
                         <h2>Automate Your Growth</h2>
-                        <p>Join hundreds of creators scaling their engagement with our AI-powered sentiment-aware comment-to-DM engine. Secure, fast, and 100% Meta-compliant.</p>
-                        <a href="/auth/instagram" class="btn-connect">Connect Instagram Business</a>
+                        <p>Join hundreds of creators scaling their engagement with our AI-powered sentiment-aware comment-to-DM engine. Secure, fast, and 100% compliant.</p>
+                        <a href="/auth/instagram" class="btn-connect">Connect Business Profile</a>
                         
                         <div style="margin-top: 4rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
                             <div style="padding: 1.5rem; background: rgba(255,255,255,0.02); border-radius: 20px;">
@@ -253,10 +261,10 @@ app.get('/', (req, res) => {
                 <span class="back-btn" onclick="showView('main-view')">← Back to Dashboard</span>
                 <h1>Privacy Policy</h1>
                 <p>Last updated: April 1, 2026</p>
-                <p>At Extreme Media World, we take your privacy seriously. This policy explains how we collect, use, and protect your data when using GoLink IG.</p>
+                <p>At GoLink Auto, we take your privacy seriously. This policy explains how we collect, use, and protect your data when using our automation platform.</p>
                 <h2>1. Data We Collect</h2>
                 <ul>
-                    <li><strong>Instagram Data:</strong> We access your public comments and basic profile info via Meta OAuth.</li>
+                    <li><strong>Platform Data:</strong> We access your public comments and basic profile info via the social media OAuth provider.</li>
                     <li><strong>Tokens:</strong> We store your 60-day Long-Lived Access Tokens using AES-256 encryption.</li>
                 </ul>
                 <h2>2. How We Use Data</h2>
@@ -288,7 +296,7 @@ app.get('/', (req, res) => {
             </div>
 
             <footer>
-                <p>&copy; 2026 Extreme Media World. All Rights Reserved.</p>
+                <p>&copy; 2026 GoLink Auto. All Rights Reserved.</p>
                 <div class="footer-links">
                     <a href="javascript:void(0)" onclick="showView('privacy-view')">Privacy Policy</a>
                     <a href="javascript:void(0)" onclick="showView('terms-view')">Terms of Service</a>
@@ -339,5 +347,14 @@ app.get('/webhook/instagram', (req, res) => {
     }
 });
 
+// --- DEBUG: Verify Config (Hidden) ---
+app.get('/check-config', (req, res) => {
+    res.json({
+        FB_APP_ID: process.env.FB_APP_ID ? "✅ Defined" : "❌ MISSING",
+        FB_APP_SECRET: process.env.FB_APP_SECRET ? "✅ Defined" : "❌ MISSING",
+        BACKEND_URL: process.env.BACKEND_URL ? "✅ Defined" : "❌ MISSING"
+    });
+});
+
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`Extreme Media World LIVE on ${PORT}`));
+server.listen(PORT, () => console.log(`GoLink Auto LIVE on ${PORT}`));
