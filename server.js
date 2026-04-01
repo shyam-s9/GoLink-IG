@@ -143,6 +143,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.get('/', (req, res) => {
     // If Meta redirects here with a code, pass it to the callback logic
     if (req.query.code) {
+        console.log("📥 RECEIVED OAUTH CODE ON ROOT:", req.query.code.substring(0, 10) + "...");
         return res.redirect(`/auth/callback?code=${req.query.code}`);
     }
     res.send(`
