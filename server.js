@@ -15,6 +15,14 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+// --- GLOBAL ERROR HANDLING (Prevent SIGTERM/Crashes) ---
+process.on('uncaughtException', (err) => {
+    console.error('💥 UNCAUGHT EXCEPTION:', err.stack);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 UNHANDLED REJECTION:', reason);
+});
+
 // --- CRITICAL SECURITY & CONNECTION LOGGING ---
 if (!process.env.FB_APP_ID) {
     console.error("❌ CRITICAL ERROR: FB_APP_ID is missing from your environment variables!");
@@ -110,12 +118,20 @@ const bootstrapMasterAccount = async () => {
 initializeDatabase().then(() => bootstrapMasterAccount());
 
 // Redis Subscriber for Real-Time Activity Feed
-const redisSub = new Redis(process.env.REDIS_URL);
+const redisSub = new Redis(process.env.REDIS_URL, {
+    retryStrategy: (times) => Math.min(times * 50, 2000),
+    maxRetriesPerRequest: null
+});
+redisSub.on('error', (err) => console.error('🔴 Redis Sub Error:', err.message));
 redisSub.subscribe('lead-health-update');
 redisSub.on('message', (channel, message) => {
-    if (channel === 'lead-health-update') {
-        const data = JSON.parse(message);
-        io.emit('activity-feed', data); // Real-time push to dashboard
+    try {
+        if (channel === 'lead-health-update') {
+            const data = JSON.parse(message);
+            io.emit('activity-feed', data); 
+        }
+    } catch (err) {
+        console.error('❌ Redis Message Parse Error:', err.message);
     }
 });
 
