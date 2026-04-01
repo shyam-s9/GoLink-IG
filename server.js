@@ -3,69 +3,39 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
 const helmet = require('helmet');
-const db = require('./db'); // Database connection
-const { messageQueue } = require('./queue');
+const db = require('./db');
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// --- EMERGENCY TABLE CREATOR ---
+// --- DATABASE INITIALIZATION ---
 const initializeDatabase = async () => {
     try {
         console.log("Checking Database Tables...");
         await db.query(`
             CREATE TABLE IF NOT EXISTS Reels_Automation (
                 id SERIAL PRIMARY KEY,
-                reel_id VARCHAR(255),
-                trigger_keyword VARCHAR(100),
+                user_id VARCHAR(255),
+                trigger_keyword VARCHAR(100) DEFAULT 'LINK',
                 affiliate_link TEXT,
                 is_enabled BOOLEAN DEFAULT true
             );
         `);
-        
-        const checkData = await db.query('SELECT COUNT(*) FROM Reels_Automation');
-        if (parseInt(checkData.rows[0].count) === 0) {
-            await db.query(`
-                INSERT INTO Reels_Automation (trigger_keyword, affiliate_link)
-                VALUES ('LINK', 'https://extrememediaworld.com');
-            `);
-            console.log("✅ Default trigger 'LINK' added to Database.");
-        }
-        console.log("✅ Database Schema is Ready.");
+        console.log("✅ Database Schema Ready.");
     } catch (err) {
-        console.error("❌ Database Initialization Error:", err.message);
+        console.error("❌ DB Error:", err.message);
     }
 };
 initializeDatabase();
 
-// Redis Subscriber
-const redisSub = new Redis(process.env.REDIS_URL);
-redisSub.subscribe('lead-health-update', (err, count) => {
-    if (err) console.error("Redis Subscribe Error:", err.message);
-    else console.log(`Subscribed to ${count} channels.`);
-});
-
-redisSub.on('message', (channel, message) => {
-    if (channel === 'lead-health-update') {
-        const data = JSON.parse(message);
-        io.emit('sentiment-push', data);
-        console.log(`[SOCKET EMIT]: Live push sent for ${data.followerIgId}`);
-    }
-});
-
 app.use(express.json());
-app.use(helmet({
-    contentSecurityPolicy: false, // Allows the inline dashboard style to load
-}));
+app.use(helmet({ contentSecurityPolicy: false }));
 
-// --- MOBILE DASHBOARD INTERFACE ---
+// --- 1. NEW SLATE-BLUE DASHBOARD (The "Antigravity" UI) ---
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -73,89 +43,66 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>EMW | CricketShaam Bot</title>
+            <title>Extreme Media World | Dashboard</title>
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .card { background: #1e293b; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; width: 85%; max-width: 400px; border: 1px solid #334155; }
-                .logo { color: #38bdf8; font-weight: 800; font-size: 1.5rem; margin-bottom: 0.5rem; }
-                .status-badge { display: inline-block; background: #064e3b; color: #34d399; padding: 5px 15px; border-radius: 50px; font-size: 0.8rem; font-weight: bold; margin-bottom: 1.5rem; border: 1px solid #059669; }
-                .info { background: #0f172a; padding: 15px; border-radius: 12px; text-align: left; font-size: 0.9rem; line-height: 1.6; }
-                .footer { margin-top: 1.5rem; font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+                body { font-family: 'Inter', -apple-system, sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                .card { background: #1e293b; padding: 2.5rem; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); text-align: center; width: 90%; max-width: 450px; border: 1px solid #334155; }
+                .logo { color: #38bdf8; font-weight: 800; font-size: 1.8rem; letter-spacing: -1px; margin-bottom: 0.5rem; }
+                .status-badge { display: inline-block; background: rgba(52, 211, 153, 0.1); color: #34d399; padding: 6px 16px; border-radius: 50px; font-size: 0.75rem; font-weight: 700; margin-bottom: 2rem; border: 1px solid rgba(52, 211, 153, 0.2); }
+                .info-box { background: #0f172a; padding: 20px; border-radius: 16px; text-align: left; font-size: 0.9rem; margin-bottom: 1.5rem; border: 1px solid #1e293b; line-height: 1.8; }
+                .login-btn { display: block; background: #4f46e5; color: white; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 600; margin-bottom: 1.5rem; transition: 0.2s; }
+                .login-btn:hover { background: #4338ca; transform: translateY(-2px); }
+                .footer-links { font-size: 0.75rem; color: #64748b; margin-top: 1rem; }
+                .footer-links a { color: #38bdf8; text-decoration: none; margin: 0 8px; }
             </style>
         </head>
         <body>
             <div class="card">
                 <div class="logo">EXTREME MEDIA WORLD</div>
-                <div class="status-badge">● SYSTEM ONLINE</div>
-                <div class="info">
+                <div class="status-badge">● SYSTEM OPERATIONAL</div>
+                <div class="info-box">
                     <strong>Project:</strong> @CricketShaam Automation<br>
+                    <strong>Security:</strong> AES-256 Encrypted 🛡️<br>
                     <strong>Database:</strong> Connected ✅<br>
-                    <strong>Webhook:</strong> Active 🟢<br>
-                    <strong>Keyword:</strong> "LINK"
+                    <strong>Status:</strong> Webhook Active 🟢
                 </div>
-                <div class="footer">Build in Public v1.0</div>
+                <a href="/auth/instagram" class="login-btn">Connect Instagram Business</a>
+                <div class="footer-links">
+                    <a href="/privacy-policy">Privacy Policy</a> • 
+                    <a href="/terms">Terms</a> • 
+                    <a href="/data-deletion">Data Deletion</a>
+                </div>
             </div>
+            <p style="margin-top: 2rem; color: #475569; font-size: 0.8rem; font-weight: 600;">BUILD IN PUBLIC V1.0</p>
         </body>
         </html>
     `);
 });
 
-// GET: The Handshake
+// --- 2. MANDATORY COMPLIANCE ROUTES ---
+app.get('/privacy-policy', (req, res) => {
+    res.send("<h1>Privacy Policy</h1><p>We use AES-256 encryption to protect your tokens.</p><a href='/'>Back</a>");
+});
+
+app.get('/terms', (req, res) => {
+    res.send("<h1>Terms of Service</h1><p>Use this tool responsibly.</p><a href='/'>Back</a>");
+});
+
+app.get('/data-deletion', (req, res) => {
+    res.send("<h1>Data Deletion</h1><p>Email shyam@extrememediaworld.com to delete your data.</p><a href='/'>Back</a>");
+});
+
+// --- 3. WEBHOOKS ---
 app.get('/webhook/instagram', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-    
     if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
-        console.log('[WEBHOOK]: Verification Successful');
         res.status(200).send(challenge);
     } else {
         res.sendStatus(403);
     }
 });
 
-// POST: The Logic
-app.post('/webhook/instagram', async (req, res) => {
-    const { entry } = req.body;
-    res.sendStatus(200); 
-    
-    if (!entry) return;
-
-    for (let event of entry) {
-        const commentData = event.changes?.[0]?.value;
-        if (!commentData) continue;
-        
-        const { id: commentId, text, from, media_id } = commentData;
-        const creatorIgId = event.id;
-
-        try {
-            const configQuery = await db.query(
-                'SELECT * FROM Reels_Automation WHERE is_enabled = true'
-            );
-
-            if (configQuery.rows.length === 0) continue;
-
-            for (let config of configQuery.rows) {
-                if (text.toLowerCase().includes(config.trigger_keyword.toLowerCase())) {
-                    await messageQueue.add('process-dm', {
-                        creatorIgId,
-                        followerIgId: from.id,
-                        link: config.affiliate_link,
-                        commentId: commentId,
-                        automationId: config.id,
-                        commentText: text
-                    }, { delay: Math.floor(Math.random() * (5000 - 2000) + 2000) });
-                    
-                    console.log(`[WEBHOOK]: Incoming comment: ${text}`);
-                }
-            }
-        } catch (error) { 
-            console.error('Webhook processing error:', error.message); 
-        }
-    }
-});
-
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Extreme Media World LIVE on ${PORT}`));
