@@ -89,6 +89,10 @@ app.use(helmet({ contentSecurityPolicy: false }));
 
 // --- 1. PREMIUM SLATE-BLUE GLASSMORPHISM DASHBOARD ---
 app.get('/', (req, res) => {
+    // If Meta redirects here with a code, pass it to the callback logic
+    if (req.query.code) {
+        return res.redirect(`/auth/callback?code=${req.query.code}`);
+    }
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
