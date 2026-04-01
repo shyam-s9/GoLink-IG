@@ -8,6 +8,11 @@ const db = require('./db');
 const { messageQueue } = require('./queue');
 require('dotenv').config();
 
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: { origin: "*", methods: ["GET", "POST"] }
+});
 // --- DATABASE INITIALIZATION ---
 const initializeDatabase = async () => {
     try {
@@ -38,12 +43,6 @@ const initializeDatabase = async () => {
     }
 };
 initializeDatabase();
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
 
 // Redis Subscriber for Real-Time Activity Feed
 const redisSub = new Redis(process.env.REDIS_URL);
