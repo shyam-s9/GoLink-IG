@@ -9,11 +9,11 @@ const { refreshToLongLivedToken } = require('../src/services/platformService');
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
 const BACKEND_URL = (process.env.BACKEND_URL || '').replace(/\/$/, '');
-const CALLBACK_URL = `${BACKEND_URL}/auth/callback`;
+const CALLBACK_URL = `${BACKEND_URL}/`; // Matches the root-redirect point
 
 router.get('/url', (req, res) => {
-    const scopes = ['instagram_basic','instagram_manage_comments','instagram_manage_messages','pages_show_list','pages_read_engagement'];
-    const url = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(CALLBACK_URL)}&scope=${scopes.join(',')}&response_type=code`;
+    const scopes = ['instagram_business_basic','instagram_business_manage_messages','instagram_business_manage_comments','instagram_business_content_publish','instagram_business_manage_insights'];
+    const url = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(CALLBACK_URL)}&response_type=code&scope=${scopes.join(',')}`;
     res.json({ url });
 });
 

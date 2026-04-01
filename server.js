@@ -19,8 +19,10 @@ const io = new Server(server, {
 if (!process.env.FB_APP_ID) {
     console.error("❌ CRITICAL ERROR: FB_APP_ID is missing from your environment variables!");
     console.error("Please add FB_APP_ID to your .env file or Render settings. Current ID:", process.env.FB_APP_ID);
+} else if (!process.env.BACKEND_URL) {
+    console.error("❌ CRITICAL ERROR: BACKEND_URL is missing! Redirects will fail.");
 } else {
-    console.log("✅ OAuth Connected. FB_APP_ID Initialized.");
+    console.log("✅ OAuth Connected. FB_APP_ID & BACKEND_URL Initialized.");
 }
 // --- DATABASE INITIALIZATION ---
 const initializeDatabase = async () => {
@@ -394,7 +396,7 @@ app.get('/', (req, res) => {
 // --- 2. LOGIC ROUTES (OAuth, Webhooks) ---
 app.get('/auth/instagram', (req, res) => {
     const scopes = 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights';
-    const redirectUri = `${process.env.BACKEND_URL}/auth/callback`;
+    const redirectUri = `${process.env.BACKEND_URL}/`; // Using ROOT as redirect point
     const url = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=${process.env.FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scopes}`;
     res.redirect(url);
 });
