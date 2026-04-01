@@ -25,7 +25,9 @@ if (!process.env.FB_APP_ID) {
 // --- DATABASE INITIALIZATION ---
 const initializeDatabase = async () => {
     try {
-        console.log("Checking Database Tables...");
+        console.log("Checking Database Tables & Migrations...");
+        
+        // 1. Core Tables
         await db.query(`
             CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
             CREATE TABLE IF NOT EXISTS Users (
@@ -45,7 +47,37 @@ const initializeDatabase = async () => {
                 is_enabled BOOLEAN DEFAULT true,
                 total_delivered INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS Analytics (
+                id SERIAL PRIMARY KEY,
+                automation_id INTEGER REFERENCES Reels_Automation(id),
+                follower_platform_id VARCHAR,
+                action_type VARCHAR,
+                sentiment_score FLOAT,
+                sentiment_label VARCHAR,
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS Leads (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                user_id UUID REFERENCES Users(id),
+                platform_handle VARCHAR,
+                email VARCHAR,
+                lead_score INTEGER DEFAULT 0,
+                source VARCHAR DEFAULT 'PLATFORM_AUTOMATION',
+                status VARCHAR DEFAULT 'NEW',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
         `);
+
+        // 2. SELF-HEALING MIGRATIONS (Renaming old columns if they exist)
+        try {
+            await db.query(`ALTER TABLE Users RENAME COLUMN ig_user_id TO platform_user_id;`).catch(() => {});
+            await db.query(`ALTER TABLE Analytics RENAME COLUMN follower_ig_id TO follower_platform_id;`).catch(() => {});
+            await db.query(`ALTER TABLE Leads RENAME COLUMN ig_handle TO platform_handle;`).catch(() => {});
+            console.log("✅ Database Migrations Applied (Trademark Purge).");
+        } catch (migErr) {
+            // Silently ignore if columns already renamed
+        }
+
         console.log("✅ Database Schema Ready.");
     } catch (err) {
         console.error("❌ DB Error:", err.message);
