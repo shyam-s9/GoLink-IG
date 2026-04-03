@@ -30,7 +30,7 @@ function validateWebhookSignature(req, res, next) {
         .update(req.rawBody)
         .digest('hex');
 
-    if (hash !== expectedHash) {
+    if (!hash || hash.length !== expectedHash.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(expectedHash))) {
         console.warn('Webhook signature mismatch!');
         return res.sendStatus(403);
     }

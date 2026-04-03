@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "worker": "node worker.js",
+    "test": "node --check server.js && node --check worker.js"
   },
   "keywords": [],
   "author": "Shyam Chaudhari",

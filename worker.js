@@ -5,6 +5,7 @@ const { checkIfFollowing, sendDM, replyToComment } = require('./src/services/pla
 const { analyzeSentiment } = require('./src/services/sentimentService');
 const { generateGoLink } = require('./src/services/urlService');
 const { decrypt } = require('./src/services/cryptoService');
+const { recordAutomationThreat } = require('./src/services/securityAgentService');
 const { connection, messageQueue } = require('./queue');
 const config = require('./config');
 
@@ -43,10 +44,47 @@ const worker = new Worker('messageQueue', async job => {
             timestamp: new Date().toISOString()
         }));
 
-        if (sentiment.label === 'negative') return;
+        if (sentiment.label === 'negative') {
+            await recordAutomationThreat({
+                userId: creator.user_id,
+                automationId,
+                followerPlatformId,
+                commentText,
+                eventType: 'blocked-negative-sentiment',
+                blocked: true,
+                extra: {
+                    sentimentScore: sentiment.score,
+                    sentimentLabel: sentiment.label
+                }
+            });
+            return;
+        }
+
+        const automationRisk = await recordAutomationThreat({
+            userId: creator.user_id,
+            automationId,
+            followerPlatformId,
+            commentText,
+            eventType: 'automation-trigger-evaluated',
+            extra: {
+                sentimentScore: sentiment.score,
+                sentimentLabel: sentiment.label
+            }
+        });
+
+        if (automationRisk.riskScore >= 65) {
+            return;
+        }
 
         // --- Lead Management (EMW) ---
-        await db.query('INSERT INTO Leads (user_id, platform_handle, source) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [creator.user_id, followerPlatformId, 'PLATFORM_AUTOMATION']);
+        await db.query(
+            `INSERT INTO Leads (user_id, platform_handle, source)
+             SELECT $1, $2, $3
+             WHERE NOT EXISTS (
+                SELECT 1 FROM Leads WHERE user_id = $1 AND platform_handle = $2
+             )`,
+            [creator.user_id, followerPlatformId, 'PLATFORM_AUTOMATION']
+        );
 
         if (name === 'process-dm') {
             const { min, max, jitterRange } = config.automation.smartDelay;
@@ -65,6 +103,15 @@ const worker = new Worker('messageQueue', async job => {
             if (sent) {
                 await db.query('UPDATE Reels_Automation SET total_delivered = total_delivered + 1 WHERE id = $1', [data.automationId]);
                 await db.query('INSERT INTO Analytics (automation_id, follower_platform_id, action_type) VALUES ($1, $2, $3)', [data.automationId, data.followerPlatformId, 'DM_SENT']);
+            } else {
+                await recordAutomationThreat({
+                    userId: creator.user_id,
+                    automationId: data.automationId,
+                    followerPlatformId: data.followerPlatformId,
+                    commentText: data.message,
+                    eventType: 'dm-delivery-failed',
+                    blocked: true
+                });
             }
         }
     } catch (error) { console.error(`Worker error:`, error); throw error; }
