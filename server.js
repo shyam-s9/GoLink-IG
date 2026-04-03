@@ -30,6 +30,7 @@ const BACKEND_URL = (process.env.BACKEND_URL || `http://localhost:${PORT}`).repl
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
+const AUTH_PROVIDER = String(process.env.AUTH_PROVIDER || 'facebook').toLowerCase();
 const CLIENT_STATIC_DIR = path.join(__dirname, 'client', 'out');
 const CLIENT_INDEX_FILE = path.join(CLIENT_STATIC_DIR, 'index.html');
 const generalRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120, prefix: 'general' });
@@ -105,7 +106,11 @@ function buildAuthUrl(state) {
     ];
 
     const callbackUrl = `${BACKEND_URL}/auth/callback`;
-    return `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${encodeURIComponent(FB_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent(scopes.join(','))}&response_type=code&state=${encodeURIComponent(state)}`;
+    if (AUTH_PROVIDER === 'instagram') {
+        return `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${encodeURIComponent(FB_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent(scopes.join(','))}&response_type=code&state=${encodeURIComponent(state)}`;
+    }
+
+    return `https://www.facebook.com/v19.0/dialog/oauth?client_id=${encodeURIComponent(FB_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent(scopes.join(','))}&response_type=code&state=${encodeURIComponent(state)}`;
 }
 
 function ensureEnv() {

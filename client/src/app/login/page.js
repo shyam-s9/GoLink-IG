@@ -26,12 +26,12 @@ export default function LoginPage() {
                     className="w-full bg-gradient-to-r from-[#fd5949] via-[#d6249f] to-[#285AEB] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg"
                 >
                     <Zap size={18} />
-                    Connect Instagram via Meta
+                    Connect Instagram
                     <ArrowRight size={16} />
                 </button>
 
                 <p className="mt-4 text-xs leading-5 text-slate-500">
-                    You may still approve permissions through Meta because Instagram Business automation, comments, messages, and webhooks are managed there.
+                    Depending on your Meta app setup, the next screen may appear as Instagram Login or Meta account authorization. Both are normal for Instagram Business permissions.
                 </p>
 
                 <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-widest">
