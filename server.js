@@ -201,6 +201,7 @@ async function initializeDatabase() {
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR;
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_security_scan_at TIMESTAMP;
+        ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS user_id UUID;
         ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS public_reply_text TEXT;
         ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
         ALTER TABLE Analytics ADD COLUMN IF NOT EXISTS sentiment_score FLOAT;
@@ -212,6 +213,7 @@ async function initializeDatabase() {
     await db.query(`ALTER TABLE Users RENAME COLUMN ig_user_id TO platform_user_id;`).catch(() => {});
     await db.query(`ALTER TABLE Analytics RENAME COLUMN follower_ig_id TO follower_platform_id;`).catch(() => {});
     await db.query(`ALTER TABLE Leads RENAME COLUMN ig_handle TO platform_handle;`).catch(() => {});
+    await db.query(`ALTER TABLE Reels_Automation ADD CONSTRAINT reels_automation_user_id_fkey FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE;`).catch(() => {});
 
     await db.query('CREATE INDEX IF NOT EXISTS idx_security_events_user_created ON Security_Events(user_id, created_at DESC)');
     await db.query('CREATE INDEX IF NOT EXISTS idx_security_events_fingerprint_created ON Security_Events(fingerprint, created_at DESC)');
