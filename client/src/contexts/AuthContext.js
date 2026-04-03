@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import { API_URL } from '../lib/api';
 
 const AuthContext = createContext();
 
@@ -13,8 +14,7 @@ export const AuthProvider = ({ children }) => {
 
     const fetchUser = async () => {
         try {
-            // This endpoint would be implemented in the backend to return the decoded user
-            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/me`, { withCredentials: true });
+            const res = await axios.get(`${API_URL}/api/me`, { withCredentials: true });
             setUser(res.data.user);
             setIsAuthenticated(true);
         } catch (err) {
@@ -31,15 +31,20 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const login = async () => {
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/auth/url`);
+        const res = await axios.get(`${API_URL}/auth/url`, { withCredentials: true });
         window.location.href = res.data.url;
     };
 
-    const logout = () => {
-        // Implementation for clearing cookies/session
-        setIsAuthenticated(false);
-        setUser(null);
-        router.push('/login');
+    const logout = async () => {
+        try {
+            await axios.post(`${API_URL}/auth/logout`, {}, { withCredentials: true });
+        } catch (err) {
+            console.error('Logout failed:', err);
+        } finally {
+            setIsAuthenticated(false);
+            setUser(null);
+            router.push('/login');
+        }
     };
 
     return (

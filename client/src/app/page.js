@@ -1,13 +1,13 @@
 'use client';
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Sidebar, BottomNav } from '../components/Navigation';
 import { StatCard, SentimentShield, LinkTracker } from '../components/DashboardComponents';
 import { useSocket } from '../hooks/useSocket';
 import { useAuth } from '../contexts/AuthContext';
 import { Zap, MessageSquare, Users, ShieldCheck, Instagram, PlusCircle, RefreshCcw } from 'lucide-react';
 import axios from 'axios';
-
-const API_URL = 'http://localhost:3001';
+import { API_URL } from '../lib/api';
 
 export default function Dashboard() {
   const { lastMessage, isConnected } = useSocket();
@@ -126,7 +126,7 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
-              <button className="btn-ghost flex-1 md:flex-none">Manage Sessions</button>
+              <Link href="/security" className="btn-ghost flex-1 md:flex-none inline-flex items-center justify-center">Manage Sessions</Link>
               <button className="btn-indigo flex-1 md:flex-none">Export Stats</button>
             </div>
           </div>
