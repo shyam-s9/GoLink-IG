@@ -55,6 +55,7 @@ function createSessionToken(data, ttlMs = SESSION_TTL_MS) {
     return signPayload({
         ...data,
         kind: 'session',
+        issuedAt: Date.now(),
         exp: Date.now() + ttlMs
     });
 }

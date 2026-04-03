@@ -21,7 +21,7 @@ export const Sidebar = () => {
         <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-indigo-200">
           <Zap size={24} color="white" />
         </div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-800">GoLink IG</h1>
+        <h1 className="text-xl font-bold tracking-tight text-slate-800">GoLink Auto</h1>
       </div>
 
       <nav className="flex-1 space-y-2">
@@ -43,7 +43,7 @@ export const Sidebar = () => {
 
       <div className="pt-6 border-t border-slate-100">
         <div className="bg-slate-50 rounded-lg p-4">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Internal Shield</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Security Shield</p>
           <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse transition-all"></div>
             System Active

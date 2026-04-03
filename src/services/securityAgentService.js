@@ -371,11 +371,54 @@ async function getSecurityOverview(userId) {
     };
 }
 
+async function listPlatformIncidents(limit = 25) {
+    const result = await db.query(
+        `SELECT si.id, si.user_id, u.full_name, u.platform_user_id, si.category, si.status, si.severity, si.risk_score, si.summary, si.created_at
+         FROM Security_Incidents si
+         LEFT JOIN Users u ON u.id = si.user_id
+         ORDER BY si.created_at DESC
+         LIMIT $1`,
+        [limit]
+    );
+
+    return result.rows;
+}
+
+async function getPlatformSecurityStats() {
+    const result = await db.query(`
+        SELECT
+            (SELECT COUNT(*)::int FROM Users WHERE is_active = true) AS active_users,
+            (SELECT COUNT(*)::int FROM Security_Incidents WHERE status = 'open') AS open_incidents,
+            (SELECT COUNT(*)::int FROM Security_Events WHERE blocked = true AND created_at >= NOW() - INTERVAL '24 hours') AS blocked_24h,
+            (SELECT COUNT(*)::int FROM Auth_Sessions WHERE revoked_at IS NULL AND expires_at > NOW()) AS active_sessions
+    `);
+
+    return result.rows[0];
+}
+
+async function resolveIncident(userId, incidentId, resolutionNote) {
+    const result = await db.query(
+        `UPDATE Security_Incidents
+         SET status = 'resolved',
+             metadata = metadata || jsonb_build_object('resolutionNote', $3, 'resolvedAt', NOW()),
+             updated_at = NOW()
+         WHERE id = $1
+           AND user_id = $2
+         RETURNING id, status, updated_at`,
+        [incidentId, userId, resolutionNote || 'Resolved by customer']
+    );
+
+    return result.rows[0] || null;
+}
+
 module.exports = {
     THRESHOLDS,
     getFingerprint,
     analyzeRequest,
     recordSecurityEvent,
     recordAutomationThreat,
-    getSecurityOverview
+    getSecurityOverview,
+    listPlatformIncidents,
+    getPlatformSecurityStats,
+    resolveIncident
 };

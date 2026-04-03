@@ -1,7 +1,7 @@
 {
   "name": "golink-auto",
   "version": "1.0.0",
-  "description": "Platform Automation for GoLink Auto",
+  "description": "Secure Instagram comment-to-DM automation platform for GoLink Auto",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -25,3 +25,4 @@
     "socket.io": "^4.8.3"
   }
 }
+

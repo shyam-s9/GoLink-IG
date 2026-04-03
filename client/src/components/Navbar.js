@@ -11,7 +11,7 @@ const Navbar = ({ onConnect, isConnected }) => {
           <div className="gradient-bg" style={{ width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Zap size={24} color="white" />
           </div>
-          <h1 className="gradient-text" style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px' }}>GoLink IG</h1>
+          <h1 className="gradient-text" style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px' }}>GoLink Auto</h1>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>

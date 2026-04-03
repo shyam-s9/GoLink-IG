@@ -15,8 +15,12 @@ const { importRecentReels, saveReelAutomation } = require('./src/controllers/ree
 const { captureRawBody, validateWebhookSignature } = require('./src/middleware/auth');
 const { attachRequestContext } = require('./src/middleware/requestContext');
 const { authenticateSession } = require('./src/middleware/sessionAuth');
+const { authenticateAdmin } = require('./src/middleware/adminAuth');
+const { createRateLimiter } = require('./src/middleware/rateLimit');
 const { createSessionToken, createStateToken, verifyStateToken, SESSION_TTL_MS } = require('./src/services/sessionService');
-const { recordSecurityEvent, getSecurityOverview } = require('./src/services/securityAgentService');
+const { recordSecurityEvent, getSecurityOverview, listPlatformIncidents, getPlatformSecurityStats, resolveIncident } = require('./src/services/securityAgentService');
+const { writeAuditLog, getAuditTrail } = require('./src/services/auditLogService');
+const { createSession, revokeSession, revokeAllOtherSessions, listUserSessions } = require('./src/services/sessionStoreService');
 
 const PORT = Number(process.env.PORT || 3001);
 const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -24,6 +28,10 @@ const BACKEND_URL = (process.env.BACKEND_URL || `http://localhost:${PORT}`).repl
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
+const generalRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120, prefix: 'general' });
+const authRateLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 25, prefix: 'auth' });
+const securityRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 30, prefix: 'security' });
+const adminRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 60, prefix: 'admin' });
 
 const app = express();
 const server = http.createServer(app);
@@ -197,6 +205,32 @@ async function initializeDatabase() {
             updated_at TIMESTAMP DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS Auth_Sessions (
+            id BIGSERIAL PRIMARY KEY,
+            session_hash VARCHAR UNIQUE NOT NULL,
+            user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
+            ip_address VARCHAR,
+            user_agent TEXT,
+            fingerprint VARCHAR,
+            revoke_reason VARCHAR,
+            expires_at TIMESTAMP NOT NULL,
+            revoked_at TIMESTAMP,
+            last_seen_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS Audit_Log (
+            id BIGSERIAL PRIMARY KEY,
+            user_id UUID REFERENCES Users(id) ON DELETE SET NULL,
+            actor_type VARCHAR DEFAULT 'system',
+            action VARCHAR NOT NULL,
+            target_type VARCHAR,
+            target_id VARCHAR,
+            request_id VARCHAR,
+            metadata JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR;
@@ -218,6 +252,8 @@ async function initializeDatabase() {
     await db.query('CREATE INDEX IF NOT EXISTS idx_security_events_user_created ON Security_Events(user_id, created_at DESC)');
     await db.query('CREATE INDEX IF NOT EXISTS idx_security_events_fingerprint_created ON Security_Events(fingerprint, created_at DESC)');
     await db.query('CREATE INDEX IF NOT EXISTS idx_automation_user_enabled ON Reels_Automation(user_id, is_enabled)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_created ON Auth_Sessions(user_id, created_at DESC)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_audit_log_user_created ON Audit_Log(user_id, created_at DESC)');
 }
 
 async function bootstrapMasterAccount() {
@@ -243,6 +279,7 @@ app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
+app.use(generalRateLimit);
 
 app.use(async (req, res, next) => {
     const openRoutes = ['/health', '/auth/url', '/auth/callback', '/webhook/instagram', '/'];
@@ -386,7 +423,7 @@ small { color: var(--muted); }
 </html>`);
 });
 
-app.get('/auth/url', async (req, res) => {
+app.get('/auth/url', authRateLimit, async (req, res) => {
     const state = createStateToken({ nonce: crypto.randomUUID(), requestId: req.requestId });
     setCookie(res, 'oauth_state', state, {
         httpOnly: true,
@@ -402,11 +439,17 @@ app.get('/auth/url', async (req, res) => {
         details: { requestId: req.requestId },
         actorType: 'visitor'
     });
+    await writeAuditLog({
+        actorType: 'visitor',
+        action: 'oauth.start',
+        requestId: req.requestId,
+        metadata: { ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress || null }
+    });
 
     res.json({ url: buildAuthUrl(state) });
 });
 
-app.get('/auth/callback', async (req, res) => {
+app.get('/auth/callback', authRateLimit, async (req, res) => {
     const { code, state } = req.query;
     const stateCookie = req.cookies.oauth_state;
 
@@ -463,10 +506,17 @@ app.get('/auth/callback', async (req, res) => {
         );
 
         const user = userQuery.rows[0];
+        const sessionId = await createSession({
+            userId: user.id,
+            ipAddress: req.headers['x-forwarded-for'] || req.socket.remoteAddress || null,
+            userAgent: req.headers['user-agent'] || 'unknown',
+            fingerprint: req.securityAnalysis?.fingerprint || null
+        });
         const sessionToken = createSessionToken({
             userId: user.id,
             platformUserId: user.platform_user_id,
-            fullName: user.full_name
+            fullName: user.full_name,
+            sessionId
         });
 
         setCookie(res, 'auth_token', sessionToken, {
@@ -485,6 +535,17 @@ app.get('/auth/callback', async (req, res) => {
             eventType: 'oauth-success',
             details: { platformUserId: user.platform_user_id }
         });
+        await writeAuditLog({
+            userId: user.id,
+            actorType: 'customer',
+            action: 'auth.login',
+            targetType: 'session',
+            targetId: sessionId,
+            requestId: req.requestId,
+            metadata: {
+                platformUserId: user.platform_user_id
+            }
+        });
 
         res.redirect(`${CLIENT_URL}?auth=success`);
     } catch (error) {
@@ -501,12 +562,21 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 app.post('/auth/logout', authenticateSession, async (req, res) => {
+    await revokeSession(req.user.sessionId, 'customer-logout');
     clearCookie(res, 'auth_token');
     await recordSecurityEvent({
         req,
         userId: req.user.userId,
         actorType: 'customer',
         eventType: 'logout'
+    });
+    await writeAuditLog({
+        userId: req.user.userId,
+        actorType: 'customer',
+        action: 'auth.logout',
+        targetType: 'session',
+        targetId: req.user.sessionId,
+        requestId: req.requestId
     });
     res.json({ ok: true });
 });
@@ -536,12 +606,12 @@ app.get('/api/me', authenticateSession, async (req, res) => {
 app.get('/api/reels/import', authenticateSession, importRecentReels);
 app.post('/api/reels/save', authenticateSession, saveReelAutomation);
 
-app.get('/api/security/overview', authenticateSession, async (req, res) => {
+app.get('/api/security/overview', authenticateSession, securityRateLimit, async (req, res) => {
     const overview = await getSecurityOverview(req.user.userId);
     res.json(overview);
 });
 
-app.get('/api/security/recommendations', authenticateSession, async (req, res) => {
+app.get('/api/security/recommendations', authenticateSession, securityRateLimit, async (req, res) => {
     const overview = await getSecurityOverview(req.user.userId);
     const recommendations = [];
 
@@ -561,7 +631,109 @@ app.get('/api/security/recommendations', authenticateSession, async (req, res) =
     res.json({ recommendations, posture: overview.posture });
 });
 
-app.get('/webhook/instagram', (req, res) => {
+app.get('/api/security/sessions', authenticateSession, securityRateLimit, async (req, res) => {
+    const sessions = await listUserSessions(req.user.userId);
+    res.json({
+        currentSessionId: req.user.sessionId,
+        sessions: sessions.map((session) => ({
+            id: session.id,
+            ipAddress: session.ip_address,
+            userAgent: session.user_agent,
+            expiresAt: session.expires_at,
+            revokedAt: session.revoked_at,
+            revokeReason: session.revoke_reason,
+            lastSeenAt: session.last_seen_at,
+            createdAt: session.created_at,
+            isCurrent: req.user.sessionDbId === session.id
+        }))
+    });
+});
+
+app.post('/api/security/sessions/revoke-others', authenticateSession, securityRateLimit, async (req, res) => {
+    const revokedCount = await revokeAllOtherSessions(req.user.userId, req.user.sessionId, 'customer-security-hardening');
+    await writeAuditLog({
+        userId: req.user.userId,
+        actorType: 'customer',
+        action: 'security.revoke_other_sessions',
+        targetType: 'session',
+        targetId: req.user.sessionId,
+        requestId: req.requestId,
+        metadata: { revokedCount }
+    });
+    res.json({ ok: true, revokedCount });
+});
+
+app.get('/api/security/audit-trail', authenticateSession, securityRateLimit, async (req, res) => {
+    const logs = await getAuditTrail(req.user.userId, 50);
+    res.json({ logs });
+});
+
+app.post('/api/security/incidents/:incidentId/resolve', authenticateSession, securityRateLimit, async (req, res) => {
+    const incident = await resolveIncident(req.user.userId, req.params.incidentId, req.body?.note);
+    if (!incident) {
+        return res.status(404).json({ message: 'Incident not found.' });
+    }
+
+    await writeAuditLog({
+        userId: req.user.userId,
+        actorType: 'customer',
+        action: 'security.resolve_incident',
+        targetType: 'incident',
+        targetId: req.params.incidentId,
+        requestId: req.requestId,
+        metadata: { note: req.body?.note || null }
+    });
+    res.json({ ok: true, incident });
+});
+
+app.get('/api/admin/security/overview', authenticateAdmin, adminRateLimit, async (req, res) => {
+    const [stats, incidents] = await Promise.all([
+        getPlatformSecurityStats(),
+        listPlatformIncidents(20)
+    ]);
+
+    await writeAuditLog({
+        actorType: 'admin',
+        action: 'admin.view_security_overview',
+        requestId: req.requestId
+    });
+
+    res.json({ stats, incidents });
+});
+
+app.post('/api/admin/users/:userId/security-lock', authenticateAdmin, adminRateLimit, async (req, res) => {
+    const { lock = true, note = null } = req.body || {};
+    const result = await db.query(
+        `UPDATE Users
+         SET is_active = $2,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, platform_user_id, full_name, is_active`,
+        [req.params.userId, !lock]
+    );
+
+    if (!result.rows.length) {
+        return res.status(404).json({ message: 'User not found.' });
+    }
+
+    if (lock) {
+        await revokeAllOtherSessions(req.params.userId, null, 'admin-security-lock');
+    }
+
+    await writeAuditLog({
+        userId: req.params.userId,
+        actorType: 'admin',
+        action: lock ? 'admin.lock_user' : 'admin.unlock_user',
+        targetType: 'user',
+        targetId: req.params.userId,
+        requestId: req.requestId,
+        metadata: { note }
+    });
+
+    res.json({ ok: true, user: result.rows[0] });
+});
+
+app.get('/webhook/instagram', authRateLimit, (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
@@ -573,7 +745,7 @@ app.get('/webhook/instagram', (req, res) => {
     res.status(403).send('Verification failed');
 });
 
-app.post('/webhook/instagram', validateWebhookSignature, async (req, res) => {
+app.post('/webhook/instagram', authRateLimit, validateWebhookSignature, async (req, res) => {
     const entries = Array.isArray(req.body.entry) ? req.body.entry : [];
     res.sendStatus(200);
 

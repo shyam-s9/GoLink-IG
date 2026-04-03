@@ -12,9 +12,9 @@ export default function LoginPage() {
                 <Zap size={32} color="white" />
             </div>
             
-            <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-3 italic">Cloud Clarity</h1>
+            <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-3 italic">GoLink Auto</h1>
             <p className="text-slate-500 font-medium mb-10 max-w-sm">
-                The ultimate EMW AI Agent for Instagram Automation. Secure 15-minute high-performance sessions.
+                Secure Instagram automation with protected customer sessions, webhook verification, and threat-aware backend controls.
             </p>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm w-full max-w-md">
@@ -28,12 +28,12 @@ export default function LoginPage() {
                 
                 <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-widest">
                     <ShieldCheck size={14} />
-                    Secured by EMW SHIELD
+                    Secured by GoLink Shield
                 </div>
             </div>
 
             <p className="mt-12 text-slate-400 text-[10px] font-bold uppercase tracking-tighter">
-                Extreme Media World Â© 2026 â€¢ Privacy Policy â€¢ Terms of Service
+                GoLink Auto © 2026 • Privacy Policy • Terms of Service
             </p>
         </div>
     );

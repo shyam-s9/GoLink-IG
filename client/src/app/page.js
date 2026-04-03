@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Sidebar, BottomNav } from '../components/Navigation';
 import { StatCard, SentimentShield, LinkTracker } from '../components/DashboardComponents';
 import { useSocket } from '../hooks/useSocket';
@@ -16,7 +16,6 @@ export default function Dashboard() {
   const [importedReels, setImportedReels] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Manual Reel Import Logic
   const handleImportReels = async () => {
     setIsImporting(true);
     try {
@@ -33,7 +32,7 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
         <Zap size={48} className="text-primary mb-6" />
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Cloud Clarity Session Required</h2>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">GoLink Auto Session Required</h2>
         <p className="text-slate-500 mb-8">Please login with Instagram to manage your automations.</p>
         <button onClick={login} className="btn-indigo">Continue with Instagram</button>
       </div>
@@ -48,13 +47,13 @@ export default function Dashboard() {
       <main className="flex-1 md:ml-64 p-6 md:p-10 pb-24 md:pb-10 transition-all">
         <header className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
           <div>
-            <h2 className="text-3xl font-black text-slate-800 tracking-tight">Cloud Clarity</h2>
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight">GoLink Auto</h2>
             <div className="flex items-center gap-2 mt-1">
-                <p className="text-slate-500 font-medium uppercase text-xs tracking-widest">SaaS Dashboard</p>
-                {isConnected ? 
-                    <span className="text-[10px] bg-emerald-50 text-success font-bold px-2 py-0.5 rounded-full border border-emerald-100 uppercase tracking-tighter">● Session Live (15m)</span> :
-                    <span className="text-[10px] bg-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full border border-slate-200">Reconnecting...</span>
-                }
+              <p className="text-slate-500 font-medium uppercase text-xs tracking-widest">Secure Automation Dashboard</p>
+              {isConnected ? 
+                <span className="text-[10px] bg-emerald-50 text-success font-bold px-2 py-0.5 rounded-full border border-emerald-100 uppercase tracking-tighter">Session Live (15m)</span> :
+                <span className="text-[10px] bg-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full border border-slate-200">Reconnecting...</span>
+              }
             </div>
           </div>
 
@@ -70,9 +69,9 @@ export default function Dashboard() {
             </div>
             <div className="w-px h-6 bg-slate-100"></div>
             <button 
-                onClick={handleImportReels}
-                disabled={isImporting}
-                className="btn-indigo flex items-center gap-2"
+              onClick={handleImportReels}
+              disabled={isImporting}
+              className="btn-indigo flex items-center gap-2"
             >
               <RefreshCcw size={16} className={isImporting ? 'animate-spin' : ''} />
               {isImporting ? 'Syncing...' : 'Import Cache'}
@@ -94,7 +93,6 @@ export default function Dashboard() {
              <LinkTracker links={[]} liveUpdate={lastMessage} />
           </div>
 
-          {/* Manual Control: Imported Reels Cache */}
           {importedReels.length > 0 && (
             <div className="md:col-span-4 bento-card">
                <h3 className="text-slate-600 font-bold mb-6 flex items-center gap-2 uppercase tracking-wider text-xs">
@@ -123,8 +121,8 @@ export default function Dashboard() {
                 <ShieldCheck size={28} />
               </div>
               <div>
-                <h4 className="font-bold text-slate-800">EMW Internal Protection</h4>
-                <p className="text-sm text-slate-500">Real-time monitoring active. Authenticated session active for 15 minutes.</p>
+                <h4 className="font-bold text-slate-800">GoLink Security Shield</h4>
+                <p className="text-sm text-slate-500">Real-time monitoring active. Session protection and automation threat checks are enabled.</p>
               </div>
             </div>
             <div className="flex gap-3 w-full md:w-auto">

@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: 'GoLink IG | Cloud Clarity Dashboard',
-  description: 'Automate your Instagram affiliate link delivery with professional SaaS clarity.',
+  title: 'GoLink Auto | Secure Instagram Automation',
+  description: 'Secure Instagram comment-to-DM automation with lead tracking and customer account protection.',
 };
 
 export default function RootLayout({ children }) {
