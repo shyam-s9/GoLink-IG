@@ -12,7 +12,7 @@ require('dotenv').config();
 const db = require('./db');
 const { messageQueue } = require('./queue');
 const { encrypt } = require('./src/services/cryptoService');
-const { refreshToLongLivedToken } = require('./src/services/platformService');
+const { refreshToLongLivedToken, getAppSecretProof } = require('./src/services/platformService');
 const { importRecentReels, saveReelAutomation } = require('./src/controllers/reelsController');
 const { captureRawBody, validateWebhookSignature } = require('./src/middleware/auth');
 const { attachRequestContext } = require('./src/middleware/requestContext');
@@ -105,7 +105,7 @@ function buildAuthUrl(state) {
     ];
 
     const callbackUrl = `${BACKEND_URL}/auth/callback`;
-    return `https://www.facebook.com/v19.0/dialog/oauth?client_id=${encodeURIComponent(FB_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent(scopes.join(','))}&response_type=code&state=${encodeURIComponent(state)}`;
+    return `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${encodeURIComponent(FB_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent(scopes.join(','))}&response_type=code&state=${encodeURIComponent(state)}`;
 }
 
 function ensureEnv() {
@@ -120,6 +120,55 @@ function ensureEnv() {
 
 function hasBuiltClient() {
     return fs.existsSync(CLIENT_INDEX_FILE);
+}
+
+async function resolvePlatformAccount(longLivedToken) {
+    const appSecretProof = getAppSecretProof(longLivedToken);
+
+    const meResponse = await axios.get('https://graph.facebook.com/v19.0/me', {
+        params: {
+            access_token: longLivedToken,
+            appsecret_proof: appSecretProof,
+            fields: 'id,name'
+        }
+    });
+
+    try {
+        const pagesResponse = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
+            params: {
+                access_token: longLivedToken,
+                appsecret_proof: appSecretProof,
+                fields: 'id,name,instagram_business_account{id,username,name}'
+            }
+        });
+
+        const pageWithInstagram = (pagesResponse.data.data || []).find((page) => page.instagram_business_account?.id);
+        if (pageWithInstagram?.instagram_business_account?.id) {
+            return {
+                platformUserId: String(pageWithInstagram.instagram_business_account.id),
+                fullName: sanitizeDisplayName(
+                    pageWithInstagram.instagram_business_account.name ||
+                    pageWithInstagram.instagram_business_account.username ||
+                    meResponse.data.name
+                ),
+                authContext: {
+                    source: 'instagram_business_account',
+                    pageId: pageWithInstagram.id,
+                    pageName: pageWithInstagram.name
+                }
+            };
+        }
+    } catch (error) {
+        console.warn('[auth] could not resolve page-linked instagram business account, falling back to /me', error.response?.data || error.message);
+    }
+
+    return {
+        platformUserId: String(meResponse.data.id),
+        fullName: sanitizeDisplayName(meResponse.data.name),
+        authContext: {
+            source: 'me-fallback'
+        }
+    };
 }
 
 async function initializeDatabase() {
@@ -492,15 +541,9 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
         const shortLivedToken = tokenRes.data.access_token;
         const longLivedToken = await refreshToLongLivedToken(shortLivedToken);
 
-        const userRes = await axios.get('https://graph.facebook.com/v19.0/me', {
-            params: {
-                access_token: longLivedToken,
-                fields: 'id,name'
-            }
-        });
-
-        const platformUserId = String(userRes.data.id);
-        const fullName = sanitizeDisplayName(userRes.data.name);
+        const account = await resolvePlatformAccount(longLivedToken);
+        const platformUserId = account.platformUserId;
+        const fullName = account.fullName;
         const encryptedToken = encrypt(longLivedToken);
 
         const userQuery = await db.query(
@@ -545,7 +588,7 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
             userId: user.id,
             actorType: 'customer',
             eventType: 'oauth-success',
-            details: { platformUserId: user.platform_user_id }
+            details: { platformUserId: user.platform_user_id, authSource: account.authContext.source }
         });
         await writeAuditLog({
             userId: user.id,
@@ -555,7 +598,8 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
             targetId: sessionId,
             requestId: req.requestId,
             metadata: {
-                platformUserId: user.platform_user_id
+                platformUserId: user.platform_user_id,
+                authContext: account.authContext
             }
         });
 

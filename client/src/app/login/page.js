@@ -1,7 +1,7 @@
 ﻿'use client';
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Zap, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -18,13 +18,21 @@ export default function LoginPage() {
             </p>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm w-full max-w-md">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-rose-600">
+                    Instagram Login for Business
+                </div>
                 <button
                     onClick={login}
-                    className="w-full bg-[#1877F2] hover:bg-[#166fe5] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-blue-100"
+                    className="w-full bg-gradient-to-r from-[#fd5949] via-[#d6249f] to-[#285AEB] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg"
                 >
-                    <img src="https://www.facebook.com/images/fb_icon_325x325.png" alt="FB" className="w-6 h-6 rounded" />
-                    Continue with Instagram
+                    <Zap size={18} />
+                    Connect Instagram via Meta
+                    <ArrowRight size={16} />
                 </button>
+
+                <p className="mt-4 text-xs leading-5 text-slate-500">
+                    You may still approve permissions through Meta because Instagram Business automation, comments, messages, and webhooks are managed there.
+                </p>
 
                 <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-widest">
                     <ShieldCheck size={14} />
