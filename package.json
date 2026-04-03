@@ -4,6 +4,7 @@
   "description": "Secure Instagram comment-to-DM automation platform for GoLink Auto",
   "main": "server.js",
   "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build",
     "start": "node server.js",
     "worker": "node worker.js",
     "test": "node --check server.js && node --check worker.js"

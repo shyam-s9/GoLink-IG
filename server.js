@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const helmet = require('helmet');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
@@ -28,6 +30,8 @@ const BACKEND_URL = (process.env.BACKEND_URL || `http://localhost:${PORT}`).repl
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
+const CLIENT_STATIC_DIR = path.join(__dirname, 'client', 'out');
+const CLIENT_INDEX_FILE = path.join(CLIENT_STATIC_DIR, 'index.html');
 const generalRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120, prefix: 'general' });
 const authRateLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 25, prefix: 'auth' });
 const securityRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 30, prefix: 'security' });
@@ -112,6 +116,10 @@ function ensureEnv() {
     } else {
         console.log('[config] core environment variables detected.');
     }
+}
+
+function hasBuiltClient() {
+    return fs.existsSync(CLIENT_INDEX_FILE);
 }
 
 async function initializeDatabase() {
@@ -322,6 +330,10 @@ app.get('/health', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
+    if (hasBuiltClient()) {
+        return res.sendFile(CLIENT_INDEX_FILE);
+    }
+
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -822,6 +834,21 @@ app.post('/webhook/instagram', authRateLimit, validateWebhookSignature, async (r
         }
     }
 });
+
+if (hasBuiltClient()) {
+    app.use(express.static(CLIENT_STATIC_DIR, {
+        extensions: ['html']
+    }));
+
+    app.get(/^\/(security|reels|leads|settings|login)(?:\/)?$/, (req, res) => {
+        const relativePath = req.path === '/' ? 'index.html' : `${req.path.replace(/^\//, '')}.html`;
+        const candidate = path.join(CLIENT_STATIC_DIR, relativePath);
+        if (fs.existsSync(candidate)) {
+            return res.sendFile(candidate);
+        }
+        return res.sendFile(CLIENT_INDEX_FILE);
+    });
+}
 
 app.use(async (err, req, res, next) => {
     console.error('[server] unhandled route error', err);

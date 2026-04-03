@@ -5,7 +5,7 @@ import { Sidebar, BottomNav } from '../components/Navigation';
 import { StatCard, SentimentShield, LinkTracker } from '../components/DashboardComponents';
 import { useSocket } from '../hooks/useSocket';
 import { useAuth } from '../contexts/AuthContext';
-import { Zap, MessageSquare, Users, ShieldCheck, Instagram, PlusCircle, RefreshCcw } from 'lucide-react';
+import { Zap, MessageSquare, Users, ShieldCheck, Clapperboard, PlusCircle, RefreshCcw } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../lib/api';
 
@@ -81,7 +81,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard title="Total GoLinks Sent" value="1,284" icon={Zap} trend="+12.5%" />
-          <StatCard title="Active Automations" value={importedReels.length || '18'} icon={Instagram} trend="+3" />
+          <StatCard title="Active Automations" value={importedReels.length || '18'} icon={Clapperboard} trend="+3" />
           <StatCard title="Qualified Leads" value="842" icon={Users} trend="84%" />
           <StatCard title="Response Rate" value="92%" icon={MessageSquare} trend="+5.2%" />
 

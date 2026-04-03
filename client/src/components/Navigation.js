@@ -1,12 +1,12 @@
 'use client';
 import React from 'react';
-import { Home, Instagram, BarChart3, Settings, ShieldCheck, Zap } from 'lucide-react';
+import { Home, Clapperboard, BarChart3, Settings, ShieldCheck, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: Home, path: '/' },
-  { label: 'Reels', icon: Instagram, path: '/reels' },
+  { label: 'Reels', icon: Clapperboard, path: '/reels' },
   { label: 'Leads', icon: BarChart3, path: '/leads' },
   { label: 'Security', icon: ShieldCheck, path: '/security' },
   { label: 'Settings', icon: Settings, path: '/settings' },
