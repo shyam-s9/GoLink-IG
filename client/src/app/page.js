@@ -11,11 +11,14 @@ import { API_URL } from '../lib/api';
 
 export default function Dashboard() {
   const { lastMessage, isConnected } = useSocket();
-  const { isAuthenticated, loading, login } = useAuth();
+  const { user, isAuthenticated, loading, login } = useAuth();
   const [smartDelay, setSmartDelay] = useState(true);
   const [importedReels, setImportedReels] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
   const [systemHealth, setSystemHealth] = useState({ worker: { healthy: false, lastHeartbeat: null } });
+  const [queueMetrics, setQueueMetrics] = useState(null);
+
+  const canViewQueue = ['ADMIN', 'ANALYST'].includes(String(user?.role || '').toUpperCase());
 
   const handleImportReels = async () => {
     setIsImporting(true);
@@ -37,25 +40,30 @@ export default function Dashboard() {
 
     const loadHealth = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/health/system`, { withCredentials: true });
+        const [healthRes, queueRes] = await Promise.all([
+          axios.get(`${API_URL}/api/health/system`, { withCredentials: true }),
+          canViewQueue ? axios.get(`${API_URL}/api/health/queue`, { withCredentials: true }) : Promise.resolve({ data: { queue: null } })
+        ]);
         if (!cancelled) {
-          setSystemHealth(res.data);
+          setSystemHealth(healthRes.data);
+          setQueueMetrics(queueRes.data.queue || null);
         }
       } catch (err) {
         if (!cancelled) {
           setSystemHealth({ worker: { healthy: false, lastHeartbeat: null } });
+          setQueueMetrics(null);
         }
       }
     };
 
     loadHealth();
-    timer = window.setInterval(loadHealth, 30000);
+    timer = window.setInterval(loadHealth, 60000);
 
     return () => {
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, canViewQueue]);
 
   if (!isAuthenticated && !loading) {
     return (
@@ -89,6 +97,13 @@ export default function Dashboard() {
                 Automation Engine: {engineHealthy ? 'Online' : 'Offline'}
               </span>
             </div>
+            {canViewQueue && queueMetrics ? (
+              <div className="flex flex-wrap items-center gap-2 mt-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                <span className="px-2 py-1 rounded-full bg-slate-100 border border-slate-200">Queue Waiting {queueMetrics.waiting || 0}</span>
+                <span className="px-2 py-1 rounded-full bg-slate-100 border border-slate-200">Active {queueMetrics.active || 0}</span>
+                <span className={`px-2 py-1 rounded-full border ${(queueMetrics.failed || 0) > 0 ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>Failed {queueMetrics.failed || 0}</span>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">

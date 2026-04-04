@@ -1,4 +1,5 @@
 ﻿const axios = require('axios');
+const { getPlatformConfig } = require('./platformConfigService');
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
@@ -8,19 +9,23 @@ function clampText(value, maxLength) {
     return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-function buildFallbackCopy({ automationContext = {}, commentText = '' }) {
+function resolveDmMaxLength(publicMaxLength) {
+    return Math.min(Math.max(publicMaxLength + 200, 300), 500);
+}
+
+function buildFallbackCopy({ automationContext = {}, commentText = '', maxLength = 300 }) {
     const normalizedComment = clampText(commentText, 120);
     const creatorName = clampText(automationContext.creatorName || 'the creator', 60);
     const publicReply = clampText(
         automationContext.publicReplyText || `Thanks ${normalizedComment ? 'for the comment' : 'so much'} - sending the details your way now.`,
-        300
+        Math.min(maxLength, 300)
     );
     const dmLink = automationContext.customLink || automationContext.affiliateLink || automationContext.link || '';
     const dmMessage = clampText(
         dmLink
             ? `Hey! ${creatorName} asked me to send this over: ${dmLink}`
             : `Hey! ${creatorName} asked me to send over the details you requested.`,
-        500
+        resolveDmMaxLength(maxLength)
     );
 
     return {
@@ -61,8 +66,11 @@ function parseJsonPayload(raw) {
     }
 }
 
-async function generateMessageVariations({ commentText, automationContext = {}, creatorTone = '' }) {
-    const fallback = buildFallbackCopy({ commentText, automationContext });
+async function generateMessageVariations({ commentText, automationContext = {}, creatorTone = '', maxLength = null }) {
+    const platformConfig = await getPlatformConfig().catch(() => ({}));
+    const resolvedTone = clampText(creatorTone || platformConfig.ai_tone || automationContext.publicReplyText || 'casual, warm, human', 180);
+    const resolvedMaxLength = Math.min(300, Math.max(120, Number(maxLength || platformConfig.ai_max_length || 300) || 300));
+    const fallback = buildFallbackCopy({ commentText, automationContext, maxLength: resolvedMaxLength });
     if (!ANTHROPIC_API_KEY) {
         return fallback;
     }
@@ -71,12 +79,12 @@ async function generateMessageVariations({ commentText, automationContext = {}, 
         'Create one public Instagram reply and one DM reply as strict JSON.',
         'Return only JSON with keys publicReply and directMessage.',
         `Comment: ${clampText(commentText, 220) || 'No comment text provided.'}`,
-        `Creator tone: ${clampText(creatorTone || automationContext.publicReplyText || 'casual, warm, human', 180)}`,
+        `Creator tone: ${resolvedTone}`,
         `Trigger keyword: ${clampText(automationContext.triggerKeyword || '', 80)}`,
         `Creator name: ${clampText(automationContext.creatorName || '', 80)}`,
         `Link to include in DM: ${automationContext.customLink || automationContext.affiliateLink || automationContext.link || 'No link available.'}`,
-        'Public reply must be under 300 characters.',
-        'DM must be under 500 characters.',
+        `Public reply must be under ${resolvedMaxLength} characters.`,
+        `DM must be under ${resolveDmMaxLength(resolvedMaxLength)} characters.`,
         'Do not use hashtags. Do not mention being an AI or bot. The DM should feel personal and naturally include the link if one is available.'
     ].join('\n');
 
@@ -106,8 +114,8 @@ async function generateMessageVariations({ commentText, automationContext = {}, 
             return fallback;
         }
 
-        const publicReply = clampText(parsed.publicReply || fallback.publicReply, 300);
-        const directMessage = clampText(parsed.directMessage || fallback.directMessage, 500);
+        const publicReply = clampText(parsed.publicReply || fallback.publicReply, resolvedMaxLength);
+        const directMessage = clampText(parsed.directMessage || fallback.directMessage, resolveDmMaxLength(resolvedMaxLength));
 
         if (!publicReply || !directMessage) {
             return fallback;

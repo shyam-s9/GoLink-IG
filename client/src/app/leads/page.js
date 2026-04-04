@@ -6,6 +6,7 @@ import { Filter, Mail, RefreshCcw, UserRound } from 'lucide-react';
 import { Sidebar, BottomNav } from '../../components/Navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_URL } from '../../lib/api';
+import { csrfPatch, getCsrfToken } from '../../lib/csrf';
 
 const STATUS_OPTIONS = [
   { label: 'All', value: 'all' },
@@ -28,6 +29,7 @@ export default function LeadsPage() {
   const [loadingLeads, setLoadingLeads] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [savingLeadId, setSavingLeadId] = useState('');
 
   const loadLeads = async (selectedStatus, isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -51,8 +53,24 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    getCsrfToken().catch(() => {});
     loadLeads(status);
   }, [isAuthenticated, status]);
+
+  const updateLeadStatus = async (leadId, nextStatus) => {
+    const previous = leads;
+    setSavingLeadId(leadId);
+    setLeads((current) => current.map((lead) => lead.id === leadId ? { ...lead, status: nextStatus.toUpperCase() } : lead));
+    try {
+      await csrfPatch(`${API_URL}/api/leads/${leadId}/status`, { status: nextStatus });
+    } catch (err) {
+      console.error('Failed to update lead status', err);
+      setLeads(previous);
+      setError(err.response?.data?.message || 'Could not update lead status.');
+    } finally {
+      setSavingLeadId('');
+    }
+  };
 
   const summary = useMemo(() => ({
     total: leads.length,
@@ -163,9 +181,19 @@ export default function LeadsPage() {
                       <td className="px-4 py-4 font-semibold">{lead.lead_score ?? 0}</td>
                       <td className="px-4 py-4 uppercase text-xs font-bold tracking-[0.18em] text-slate-500">{lead.source || 'UNKNOWN'}</td>
                       <td className="px-4 py-4">
-                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${statusClass(lead.status)}`}>
-                          {lead.status || 'NEW'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={String(lead.status || 'NEW').toLowerCase()}
+                            onChange={(e) => updateLeadStatus(lead.id, e.target.value)}
+                            disabled={savingLeadId === lead.id}
+                            className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] ${statusClass(lead.status)}`}
+                          >
+                            <option value="new">New</option>
+                            <option value="contacted">Contacted</option>
+                            <option value="converted">Converted</option>
+                          </select>
+                          {savingLeadId === lead.id ? <span className="text-xs text-slate-400">Saving...</span> : null}
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-slate-500">{lead.created_at ? new Date(lead.created_at).toLocaleString() : 'Unknown'}</td>
                     </tr>

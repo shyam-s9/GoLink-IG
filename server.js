@@ -28,6 +28,8 @@ const { generateCsrfToken, doubleCsrfProtection, invalidCsrfTokenError } = requi
 const { registerRecurringJobs } = require('./src/services/maintenanceScheduler');
 const { getSystemHealth } = require('./src/services/systemHealthService');
 const { expressesIntent } = require('./src/services/intentService');
+const { getQueueMetrics } = require('./src/services/queueMetricsService');
+const { getPlatformConfig, savePlatformConfig } = require('./src/services/platformConfigService');
 
 const PORT = Number(process.env.PORT || 3001);
 const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -546,7 +548,7 @@ app.post('/auth/logout', authenticateSession, doubleCsrfProtection, async (req, 
 
 app.get('/api/me', authenticateSession, async (req, res) => {
     const userQuery = await db.query(
-        'SELECT id, platform_user_id, full_name, role, is_active, last_login_at, last_security_scan_at FROM Users WHERE id = $1',
+        'SELECT id, platform_user_id, full_name, role, is_active, last_login_at, last_security_scan_at, token_expires_at FROM Users WHERE id = $1',
         [req.user.userId]
     );
 
@@ -562,7 +564,8 @@ app.get('/api/me', authenticateSession, async (req, res) => {
             role: userQuery.rows[0].role,
             isActive: userQuery.rows[0].is_active,
             lastLoginAt: userQuery.rows[0].last_login_at,
-            lastSecurityScanAt: userQuery.rows[0].last_security_scan_at
+            lastSecurityScanAt: userQuery.rows[0].last_security_scan_at,
+            tokenExpiresAt: userQuery.rows[0].token_expires_at
         }
     });
 });
@@ -599,6 +602,28 @@ app.get('/api/leads', authenticateSession, async (req, res) => {
 
     const result = await db.query(sql, params);
     res.json({ leads: result.rows });
+});
+
+app.patch('/api/leads/:leadId/status', authenticateSession, securityRateLimit, doubleCsrfProtection, async (req, res) => {
+    const requestedStatus = String(req.body?.status || '').trim().toUpperCase();
+    const allowedStatuses = new Set(['NEW', 'CONTACTED', 'CONVERTED']);
+    if (!allowedStatuses.has(requestedStatus)) {
+        return res.status(400).json({ message: 'Invalid lead status.' });
+    }
+
+    const result = await db.query(
+        `UPDATE Leads
+         SET status = $1
+         WHERE id = $2 AND user_id = $3
+         RETURNING id, platform_handle, email, lead_score, source, status, created_at`,
+        [requestedStatus, req.params.leadId, req.user.userId]
+    );
+
+    if (!result.rows.length) {
+        return res.status(404).json({ message: 'Lead not found.' });
+    }
+
+    res.json({ lead: result.rows[0] });
 });
 
 app.get('/api/security/overview', authenticateSession, securityRateLimit, async (req, res) => {
@@ -696,6 +721,23 @@ app.get('/api/admin/security/overview', authenticateSession, requireRole('ADMIN'
     res.json({ stats, incidents });
 });
 
+app.get('/api/admin/users', authenticateSession, requireRole('ADMIN', 'ANALYST'), adminRateLimit, async (req, res) => {
+    const result = await db.query(
+        `SELECT
+            u.id,
+            u.full_name,
+            u.platform_user_id,
+            u.is_active,
+            u.last_login_at,
+            COALESCE(csp.risk_level, 'normal') AS risk_level
+         FROM Users u
+         LEFT JOIN Customer_Security_Posture csp ON csp.user_id = u.id
+         ORDER BY u.created_at DESC`
+    );
+
+    res.json({ users: result.rows });
+});
+
 app.get('/api/admin/system-health', authenticateSession, requireRole('ADMIN', 'ANALYST'), adminRateLimit, async (req, res) => {
     const systemHealth = await getSystemHealth();
     await writeAuditLog({
@@ -705,6 +747,31 @@ app.get('/api/admin/system-health', authenticateSession, requireRole('ADMIN', 'A
         requestId: req.requestId
     });
     res.json(systemHealth);
+});
+
+app.get('/api/admin/config', authenticateSession, requireRole('ADMIN'), adminRateLimit, async (req, res) => {
+    const config = await getPlatformConfig();
+    res.json({ config });
+});
+
+app.post('/api/admin/config', authenticateSession, requireRole('ADMIN'), adminRateLimit, doubleCsrfProtection, async (req, res) => {
+    const incoming = req.body?.config || req.body || {};
+    const allowedKeys = ['ai_tone', 'ai_max_length', 'ai_safety_mode'];
+    const filtered = Object.fromEntries(
+        Object.entries(incoming).filter(([key]) => allowedKeys.includes(key))
+    );
+
+    if (!Object.keys(filtered).length) {
+        return res.status(400).json({ message: 'No valid config values provided.' });
+    }
+
+    const config = await savePlatformConfig(filtered);
+    res.json({ ok: true, config });
+});
+
+app.get('/api/health/queue', authenticateSession, requireRole('ADMIN', 'ANALYST'), adminRateLimit, async (req, res) => {
+    const queue = await getQueueMetrics();
+    res.json({ queue });
 });
 
 app.post('/api/admin/users/:userId/security-lock', authenticateSession, requireRole('ADMIN'), adminRateLimit, doubleCsrfProtection, async (req, res) => {
@@ -839,7 +906,7 @@ if (hasBuiltClient()) {
         extensions: ['html']
     }));
 
-    app.get(/^\/(security|reels|leads|settings|login)(?:\/)?$/, (req, res) => {
+    app.get(/^\/(security|reels|leads|settings|login|admin)(?:\/)?$/, (req, res) => {
         const relativePath = req.path === '/' ? 'index.html' : `${req.path.replace(/^\//, '')}.html`;
         const candidate = path.join(CLIENT_STATIC_DIR, relativePath);
         if (fs.existsSync(candidate)) {

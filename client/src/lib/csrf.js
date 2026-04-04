@@ -24,3 +24,15 @@ export async function csrfPost(url, body = {}, config = {}) {
     }
   });
 }
+
+export async function csrfPatch(url, body = {}, config = {}) {
+  const token = await getCsrfToken();
+  return axios.patch(url, body, {
+    ...config,
+    withCredentials: true,
+    headers: {
+      ...(config.headers || {}),
+      'x-csrf-token': token
+    }
+  });
+}
