@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS "platform_config" (
+CREATE TABLE IF NOT EXISTS "platform_config" (
   "id" SERIAL PRIMARY KEY,
   "key" VARCHAR NOT NULL UNIQUE,
   "value" VARCHAR NOT NULL,
