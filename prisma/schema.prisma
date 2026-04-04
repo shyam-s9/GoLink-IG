@@ -160,3 +160,12 @@ model AuditLog {
   @@index([userId, createdAt(sort: Desc)], map: "idx_audit_log_user_created")
   @@map("Audit_Log")
 }
+
+model PlatformConfig {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  @@map("platform_config")
+}

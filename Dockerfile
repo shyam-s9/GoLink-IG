@@ -21,4 +21,4 @@ ENV PORT=10000
 
 EXPOSE 10000
 
-CMD ["npm", "start"]
+CMD ["npm", "run", "start:render"]

@@ -6,7 +6,9 @@
   "scripts": {
     "build": "npx prisma generate && npm --prefix client install && npm --prefix client run build",
     "start": "npx prisma migrate deploy && node server.js",
+    "start:render": "sh ./prisma/mark-baseline.sh && npx prisma migrate deploy && node server.js",
     "worker": "npx prisma migrate deploy && node worker.js",
+    "worker:render": "sh ./prisma/mark-baseline.sh && npx prisma migrate deploy && node worker.js",
     "test": "jest --runInBand",
     "test:syntax": "node --check server.js && node --check worker.js",
     "prisma:generate": "npx prisma generate",

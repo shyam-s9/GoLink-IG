@@ -70,13 +70,31 @@ Relevant files:
 ### 3.2 Build and Start Behavior
 Root scripts:
 - `npm run build`: Prisma client generation plus client build/export
-- `npm start`: `prisma migrate deploy` then starts [server.js](/D:/GoLink%20IG/GoLink%20IG%20New/server.js)
-- `npm run worker`: `prisma migrate deploy` then starts [worker.js](/D:/GoLink%20IG/GoLink%20IG%20New/worker.js)
+- `npm start`: local/default server startup with `prisma migrate deploy`
+- `npm run start:render`: Render-safe startup that marks baseline migrations, runs `prisma migrate deploy`, then starts [server.js](/D:/GoLink%20IG/GoLink%20IG%20New/server.js)
+- `npm run worker`: local/default worker startup with `prisma migrate deploy`
+- `npm run worker:render`: Render-safe worker startup with baseline marking plus `prisma migrate deploy`
 - `npm test`: Jest integration/security tests
 - `npm run test:syntax`: syntax validation for server and worker
 
 ### 3.3 Frontend Serving
 The frontend is built from `client/` and exported to `client/out`, then served by Express from the main web service.
+
+### 3.4 Production Database Setup
+Production PostgreSQL already existed before Prisma migration history was introduced.
+
+To avoid destructive resets and to prevent `P3005` on first deploy, the runtime startup sequence now does the following:
+1. runs [mark-baseline.sh](/D:/GoLink%20IG/GoLink%20IG%20New/prisma/mark-baseline.sh)
+2. marks `20260404000000_initial_baseline` as applied if it is not already recorded
+3. marks `20260404120000_align_prisma_role_varchar` as applied if it is not already recorded
+4. runs `prisma migrate deploy`
+5. starts the Node process
+
+Important notes:
+- this does not drop or alter existing application data
+- it is intended to reconcile Prisma migration history with an already-populated database
+- once the baseline is recorded, subsequent deploys should continue through normal `prisma migrate deploy`
+- Render uses `npm run start:render` through the Docker CMD so this sequence happens automatically on deploy
 
 ## 4. Codebase Layout
 
