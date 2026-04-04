@@ -1,5 +1,5 @@
 const axios = require('axios');
-const db = require('../db');
+const db = require('../../db');
 const { decrypt } = require('../services/cryptoService');
 
 async function fetchRecentMedia(accessToken, platformUserId, limit = 25) {
