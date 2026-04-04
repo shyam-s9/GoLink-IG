@@ -93,6 +93,22 @@ body {
   color: var(--primary);
 }
 
+.input-premium {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--foreground);
+  border-radius: 14px;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-premium:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
 .nav-link {
   display: flex;
   align-items: center;

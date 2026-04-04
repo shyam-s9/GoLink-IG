@@ -1,5 +1,5 @@
-'use client';
-import React, { useState } from 'react';
+﻿'use client';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Sidebar, BottomNav } from '../components/Navigation';
 import { StatCard, SentimentShield, LinkTracker } from '../components/DashboardComponents';
@@ -15,18 +15,47 @@ export default function Dashboard() {
   const [smartDelay, setSmartDelay] = useState(true);
   const [importedReels, setImportedReels] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [systemHealth, setSystemHealth] = useState({ worker: { healthy: false, lastHeartbeat: null } });
 
   const handleImportReels = async () => {
     setIsImporting(true);
     try {
       const res = await axios.get(`${API_URL}/api/reels/import`, { withCredentials: true });
-      setImportedReels(res.data.reels);
+      setImportedReels(res.data.reels || []);
     } catch (err) {
       console.error('Import failed:', err);
     } finally {
       setIsImporting(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    let timer = null;
+
+    const loadHealth = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/health/system`, { withCredentials: true });
+        if (!cancelled) {
+          setSystemHealth(res.data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSystemHealth({ worker: { healthy: false, lastHeartbeat: null } });
+        }
+      }
+    };
+
+    loadHealth();
+    timer = window.setInterval(loadHealth, 30000);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [isAuthenticated]);
 
   if (!isAuthenticated && !loading) {
     return (
@@ -39,28 +68,33 @@ export default function Dashboard() {
     );
   }
 
+  const engineHealthy = Boolean(systemHealth.worker?.healthy);
+
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
       <BottomNav />
-      
+
       <main className="flex-1 md:ml-64 p-6 md:p-10 pb-24 md:pb-10 transition-all">
         <header className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
           <div>
             <h2 className="text-3xl font-black text-slate-800 tracking-tight">GoLink Auto</h2>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex flex-wrap items-center gap-2 mt-2">
               <p className="text-slate-500 font-medium uppercase text-xs tracking-widest">Secure Automation Dashboard</p>
               {isConnected ? 
                 <span className="text-[10px] bg-emerald-50 text-success font-bold px-2 py-0.5 rounded-full border border-emerald-100 uppercase tracking-tighter">Session Live (15m)</span> :
                 <span className="text-[10px] bg-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-full border border-slate-200">Reconnecting...</span>
               }
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-tighter ${engineHealthy ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+                Automation Engine: {engineHealthy ? 'Online' : 'Offline'}
+              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-3 px-3">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Smart Delay</span>
-              <button 
+              <button
                 onClick={() => setSmartDelay(!smartDelay)}
                 className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 ${smartDelay ? 'bg-primary' : 'bg-slate-200'}`}
               >
@@ -68,7 +102,7 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="w-px h-6 bg-slate-100"></div>
-            <button 
+            <button
               onClick={handleImportReels}
               disabled={isImporting}
               className="btn-indigo flex items-center gap-2"
@@ -88,7 +122,7 @@ export default function Dashboard() {
           <div className="md:col-span-1 min-h-[400px]">
             <SentimentShield positive={2450} negative={120} liveUpdate={lastMessage} />
           </div>
-          
+
           <div className="md:col-span-3 min-h-[400px]">
              <LinkTracker links={[]} liveUpdate={lastMessage} />
           </div>

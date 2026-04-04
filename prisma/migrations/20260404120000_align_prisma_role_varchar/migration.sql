@@ -1,0 +1,6 @@
+﻿-- Prisma baseline alignment migration
+-- No database changes are required here.
+-- The live table already stores Users.role as VARCHAR.
+-- This migration exists to document the Prisma schema correction
+-- from enum-based modeling to VARCHAR-based modeling so future
+-- migrations match the existing PostgreSQL shape.

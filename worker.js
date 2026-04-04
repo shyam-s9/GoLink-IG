@@ -1,13 +1,14 @@
-const { Worker } = require('bullmq');
+﻿const { Worker } = require('bullmq');
 const os = require('os');
 const Redis = require('ioredis');
 const db = require('./db');
-const { checkIfFollowing, sendDM, replyToComment } = require('./src/services/platformService');
+const { sendDM, replyToComment } = require('./src/services/platformService');
 const { analyzeSentiment } = require('./src/services/sentimentService');
 const { generateGoLink } = require('./src/services/urlService');
 const { decrypt } = require('./src/services/cryptoService');
 const { recordAutomationThreat } = require('./src/services/securityAgentService');
 const { rotateExpiringTokens } = require('./src/services/tokenRotationService');
+const { generateMessageVariations } = require('./src/services/aiVariationService');
 const { connection, messageQueue } = require('./queue');
 const config = require('./config');
 
@@ -32,13 +33,10 @@ async function publishWorkerHeartbeat() {
     }), 'EX', 120);
 }
 
-/**
- * Worker Logic for GoLink Auto
- */
-const worker = new Worker('messageQueue', async job => {
+const worker = new Worker('messageQueue', async (job) => {
     const { name, data } = job;
-    const { creatorPlatformId, followerPlatformId, link, commentId, automationId, commentText } = data;
-    
+    const { creatorPlatformId, followerPlatformId, commentId, automationId, commentText } = data;
+
     try {
         if (name === 'prune-expired-sessions') {
             return pruneExpiredSessions();
@@ -48,23 +46,59 @@ const worker = new Worker('messageQueue', async job => {
             return rotateExpiringTokens();
         }
 
+        if (name === 'send-public-reply') {
+            return replyToComment(data.commentId, data.message, data.accessToken);
+        }
+
+        if (name === 'send-private-dm') {
+            const sent = await sendDM(data.creatorPlatformId, data.followerPlatformId, data.message, data.accessToken);
+            if (sent) {
+                await db.query('UPDATE Reels_Automation SET total_delivered = total_delivered + 1 WHERE id = $1', [data.automationId]);
+                await db.query('INSERT INTO Analytics (automation_id, follower_platform_id, action_type) VALUES ($1, $2, $3)', [data.automationId, data.followerPlatformId, 'DM_SENT']);
+            } else {
+                const owner = await db.query(
+                    `SELECT user_id FROM Reels_Automation WHERE id = $1`,
+                    [data.automationId]
+                );
+                await recordAutomationThreat({
+                    userId: owner.rows[0]?.user_id || null,
+                    automationId: data.automationId,
+                    followerPlatformId: data.followerPlatformId,
+                    commentText: data.message,
+                    eventType: 'dm-delivery-failed',
+                    blocked: true
+                });
+            }
+            return sent;
+        }
+
         const creatorQuery = await db.query(
-            'SELECT u.id as user_id, u.access_token, u.is_active, ra.public_reply_text FROM Users u JOIN Reels_Automation ra ON ra.user_id = u.id WHERE ra.id = $1',
+            `SELECT
+                u.id AS user_id,
+                u.access_token,
+                u.is_active,
+                u.full_name,
+                ra.public_reply_text,
+                ra.affiliate_link,
+                ra.trigger_keyword
+             FROM Users u
+             JOIN Reels_Automation ra ON ra.user_id = u.id
+             WHERE ra.id = $1`,
             [automationId]
         );
-        if (!creatorQuery.rows || creatorQuery.rows.length === 0) return;
-        const creator = creatorQuery.rows[0];
-        if (!creator.is_active) return;
-        const decryptedToken = decrypt(creator.access_token);
+        if (!creatorQuery.rows.length) return null;
 
-        // --- Sentiment Analysis (GoLink Shield) ---
+        const creator = creatorQuery.rows[0];
+        if (!creator.is_active) return null;
+
+        const decryptedToken = decrypt(creator.access_token);
         const sentiment = analyzeSentiment(commentText);
+
         await db.query(
             'UPDATE Analytics SET sentiment_score = $1, sentiment_label = $2 WHERE (follower_platform_id = $3 AND automation_id = $4) OR (id IN (SELECT id FROM Analytics WHERE automation_id = $4 ORDER BY timestamp DESC LIMIT 1))',
             [sentiment.score, sentiment.label, followerPlatformId, automationId]
         );
 
-        // [SOCKET PUSH]: Notify Server to Emit Sentiment Update
         redisPub.publish('lead-health-update', JSON.stringify({
             automationId,
             followerPlatformId,
@@ -86,7 +120,7 @@ const worker = new Worker('messageQueue', async job => {
                     sentimentLabel: sentiment.label
                 }
             });
-            return;
+            return null;
         }
 
         const automationRisk = await recordAutomationThreat({
@@ -102,10 +136,9 @@ const worker = new Worker('messageQueue', async job => {
         });
 
         if (automationRisk.riskScore >= 65) {
-            return;
+            return null;
         }
 
-        // --- Lead Management (GoLink Auto) ---
         await db.query(
             `INSERT INTO Leads (user_id, platform_handle, source)
              SELECT $1, $2, $3
@@ -119,31 +152,39 @@ const worker = new Worker('messageQueue', async job => {
             const { min, max, jitterRange } = config.automation.smartDelay;
             const jitter = Math.floor(Math.random() * jitterRange) + (jitterRange / 2);
             const publicReplyDelay = Math.floor(Math.random() * (max - min) + min) + jitter;
-            
-            await messageQueue.add('send-public-reply', { commentId, message: creator.public_reply_text || "Sent you details! 🚀", accessToken: decryptedToken }, { delay: publicReplyDelay });
-
             const customLink = generateGoLink(automationId, followerPlatformId);
-            await messageQueue.add('send-private-dm', { creatorPlatformId, followerPlatformId, message: `Here is your requested link: ${customLink}`, accessToken: decryptedToken, automationId }, { delay: 10000 });
+            const messageVariations = await generateMessageVariations({
+                commentText,
+                creatorTone: creator.public_reply_text || 'casual, warm, human',
+                automationContext: {
+                    creatorName: creator.full_name,
+                    triggerKeyword: creator.trigger_keyword,
+                    publicReplyText: creator.public_reply_text,
+                    affiliateLink: creator.affiliate_link,
+                    customLink
+                }
+            });
+
+            await messageQueue.add('send-public-reply', {
+                commentId,
+                message: messageVariations.publicReply,
+                accessToken: decryptedToken
+            }, { delay: publicReplyDelay });
+
+            await messageQueue.add('send-private-dm', {
+                creatorPlatformId,
+                followerPlatformId,
+                message: messageVariations.directMessage,
+                accessToken: decryptedToken,
+                automationId
+            }, { delay: 10_000 });
         }
 
-        if (name === 'send-public-reply') await replyToComment(data.commentId, data.message, data.accessToken);
-        if (name === 'send-private-dm') {
-            const sent = await sendDM(data.creatorPlatformId, data.followerPlatformId, data.message, data.accessToken);
-            if (sent) {
-                await db.query('UPDATE Reels_Automation SET total_delivered = total_delivered + 1 WHERE id = $1', [data.automationId]);
-                await db.query('INSERT INTO Analytics (automation_id, follower_platform_id, action_type) VALUES ($1, $2, $3)', [data.automationId, data.followerPlatformId, 'DM_SENT']);
-            } else {
-                await recordAutomationThreat({
-                    userId: creator.user_id,
-                    automationId: data.automationId,
-                    followerPlatformId: data.followerPlatformId,
-                    commentText: data.message,
-                    eventType: 'dm-delivery-failed',
-                    blocked: true
-                });
-            }
-        }
-    } catch (error) { console.error(`Worker error:`, error); throw error; }
+        return null;
+    } catch (error) {
+        console.error('Worker error:', error);
+        throw error;
+    }
 }, { connection });
 
 worker.on('failed', (job, err) => console.error(`${job.id} failed with ${err.message}`));

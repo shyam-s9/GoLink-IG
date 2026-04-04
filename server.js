@@ -13,7 +13,7 @@ const db = require('./db');
 const { messageQueue } = require('./queue');
 const { encrypt } = require('./src/services/cryptoService');
 const { refreshToLongLivedToken, getAppSecretProof } = require('./src/services/platformService');
-const { importRecentReels, saveReelAutomation } = require('./src/controllers/reelsController');
+const { importRecentReels, listReelAutomations, saveReelAutomation } = require('./src/controllers/reelsController');
 const { captureRawBody, validateWebhookSignature } = require('./src/middleware/auth');
 const { attachRequestContext } = require('./src/middleware/requestContext');
 const { authenticateSession } = require('./src/middleware/sessionAuth');
@@ -27,6 +27,7 @@ const { createSession, revokeSession, revokeAllOtherSessions, listUserSessions }
 const { generateCsrfToken, doubleCsrfProtection, invalidCsrfTokenError } = require('./src/services/csrfService');
 const { registerRecurringJobs } = require('./src/services/maintenanceScheduler');
 const { getSystemHealth } = require('./src/services/systemHealthService');
+const { expressesIntent } = require('./src/services/intentService');
 
 const PORT = Number(process.env.PORT || 3001);
 const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -566,8 +567,39 @@ app.get('/api/me', authenticateSession, async (req, res) => {
     });
 });
 
+app.get('/api/health/system', authenticateSession, async (req, res) => {
+    const systemHealth = await getSystemHealth();
+    res.json({
+        worker: {
+            healthy: Boolean(systemHealth.worker?.healthy),
+            lastHeartbeat: systemHealth.worker?.lastHeartbeat || null
+        }
+    });
+});
+
 app.get('/api/reels/import', authenticateSession, importRecentReels);
+app.get('/api/reels/list', authenticateSession, listReelAutomations);
 app.post('/api/reels/save', authenticateSession, doubleCsrfProtection, saveReelAutomation);
+
+app.get('/api/leads', authenticateSession, async (req, res) => {
+    const requestedStatus = String(req.query.status || '').trim();
+    const params = [req.user.userId];
+    let sql = `
+        SELECT id, platform_handle, email, lead_score, source, status, created_at
+        FROM Leads
+        WHERE user_id = $1
+    `;
+
+    if (requestedStatus && requestedStatus.toLowerCase() !== 'all') {
+        params.push(requestedStatus.toUpperCase());
+        sql += ` AND UPPER(status) = $2`;
+    }
+
+    sql += ` ORDER BY created_at DESC`;
+
+    const result = await db.query(sql, params);
+    res.json({ leads: result.rows });
+});
 
 app.get('/api/security/overview', authenticateSession, securityRateLimit, async (req, res) => {
     const overview = await getSecurityOverview(req.user.userId);
@@ -767,7 +799,12 @@ app.post('/webhook/instagram', authRateLimit, validateWebhookSignature, async (r
             );
 
             for (const config of configQuery.rows) {
-                if (!commentText.toLowerCase().includes(String(config.trigger_keyword).toLowerCase())) {
+                const matchedIntent = await expressesIntent({
+                    commentText,
+                    triggerKeyword: config.trigger_keyword
+                });
+
+                if (!matchedIntent) {
                     continue;
                 }
 
