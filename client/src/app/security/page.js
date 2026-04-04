@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Clock3, Fingerprint, Lock, RefreshCcw, Shi
 import { Sidebar, BottomNav } from '../../components/Navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_URL } from '../../lib/api';
+import { csrfPost, getCsrfToken } from '../../lib/csrf';
 
 function formatDate(value) {
   if (!value) return 'Not available';
@@ -58,6 +59,7 @@ export default function SecurityPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      getCsrfToken().catch(() => {});
       loadSecurityData();
     }
   }, [isAuthenticated]);
@@ -77,7 +79,7 @@ export default function SecurityPage() {
     setIsRevoking(true);
     setError('');
     try {
-      await axios.post(`${API_URL}/api/security/sessions/revoke-others`, {}, { withCredentials: true });
+      await csrfPost(`${API_URL}/api/security/sessions/revoke-others`);
       await loadSecurityData();
     } catch (err) {
       console.error('Failed to revoke sessions:', err);
@@ -89,7 +91,7 @@ export default function SecurityPage() {
 
   const resolveIncident = async (incidentId) => {
     try {
-      await axios.post(`${API_URL}/api/security/incidents/${incidentId}/resolve`, { note: 'Reviewed in Security Center' }, { withCredentials: true });
+      await csrfPost(`${API_URL}/api/security/incidents/${incidentId}/resolve`, { note: 'Reviewed in Security Center' });
       await loadSecurityData();
     } catch (err) {
       console.error('Failed to resolve incident:', err);

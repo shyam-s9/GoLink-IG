@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
     agency: {
         domain: process.env.AGENCY_URL || 'https://agency.golink.ig',
-        brandName: 'Extreme Media World',
+        brandName: 'GoLink Auto',
         shortLinkPath: '/l/'
     },
     automation: {

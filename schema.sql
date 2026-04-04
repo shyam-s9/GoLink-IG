@@ -43,7 +43,7 @@ CREATE TABLE Analytics (
     timestamp TIMESTAMP DEFAULT NOW()
 );
 
--- Leads Table (EMW Lead Management)
+-- Leads Table (GoLink Auto Lead Management)
 CREATE TABLE Leads (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES Users(id),

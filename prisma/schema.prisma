@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CUSTOMER
+  ANALYST
+  ADMIN
+}
+
+model User {
+  id                 String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  platformUserId     String                    @unique @map("platform_user_id")
+  fullName           String?                   @map("full_name")
+  accessToken        String                    @map("access_token")
+  role               Role                      @default(CUSTOMER)
+  isActive           Boolean                   @default(true) @map("is_active")
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime                  @default(now()) @map("updated_at") @db.Timestamp(6)
+  lastLoginAt        DateTime?                 @map("last_login_at") @db.Timestamp(6)
+  lastLoginIp        String?                   @map("last_login_ip")
+  lastSecurityScanAt DateTime?                 @map("last_security_scan_at") @db.Timestamp(6)
+  tokenExpiresAt     DateTime?                 @map("token_expires_at") @db.Timestamp(6)
+  automations        ReelsAutomation[]
+  leads              Lead[]
+  securityPosture    CustomerSecurityPosture?
+  securityEvents     SecurityEvent[]
+  incidents          SecurityIncident[]
+  sessions           AuthSession[]
+  auditLogs          AuditLog[]
+
+  @@map("Users")
+}
+
+model ReelsAutomation {
+  id              Int         @id @default(autoincrement())
+  userId          String?     @map("user_id") @db.Uuid
+  reelId          String      @map("reel_id")
+  triggerKeyword  String      @map("trigger_keyword")
+  publicReplyText String?     @map("public_reply_text")
+  affiliateLink   String      @map("affiliate_link")
+  isEnabled       Boolean     @default(true) @map("is_enabled")
+  totalDelivered  Int         @default(0) @map("total_delivered")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  user            User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analytics       Analytics[]
+
+  @@index([userId, isEnabled], map: "idx_automation_user_enabled")
+  @@map("Reels_Automation")
+}
+
+model Analytics {
+  id                 Int               @id @default(autoincrement())
+  automationId       Int?              @map("automation_id")
+  followerPlatformId String?           @map("follower_platform_id")
+  actionType         String?           @map("action_type")
+  sentimentScore     Float?            @map("sentiment_score")
+  sentimentLabel     String?           @map("sentiment_label")
+  timestamp          DateTime          @default(now()) @db.Timestamp(6)
+  automation         ReelsAutomation?  @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@map("Analytics")
+}
+
+model Lead {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  platformHandle String?  @map("platform_handle")
+  email          String?
+  leadScore      Int      @default(0) @map("lead_score")
+  source         String   @default("PLATFORM_AUTOMATION")
+  status         String   @default("NEW")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  user           User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("Leads")
+}
+
+model CustomerSecurityPosture {
+  userId                 String    @id @map("user_id") @db.Uuid
+  riskLevel              String    @default("normal") @map("risk_level")
+  lastRiskScore          Int       @default(0) @map("last_risk_score")
+  suspiciousRequestCount Int       @default(0) @map("suspicious_request_count")
+  blockedRequestCount    Int       @default(0) @map("blocked_request_count")
+  compromisedSignals     Int       @default(0) @map("compromised_signals")
+  lastIncidentAt         DateTime? @map("last_incident_at") @db.Timestamp(6)
+  lastSeenAt             DateTime? @map("last_seen_at") @db.Timestamp(6)
+  updatedAt              DateTime  @default(now()) @map("updated_at") @db.Timestamp(6)
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("Customer_Security_Posture")
+}
+
+model SecurityEvent {
+  id          BigInt   @id @default(autoincrement())
+  userId      String?  @map("user_id") @db.Uuid
+  actorType   String   @default("anonymous") @map("actor_type")
+  eventType   String   @map("event_type")
+  severity    String   @default("low")
+  riskScore   Int      @default(0) @map("risk_score")
+  blocked     Boolean  @default(false)
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  fingerprint String?
+  details     Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_security_events_user_created")
+  @@index([fingerprint, createdAt(sort: Desc)], map: "idx_security_events_fingerprint_created")
+  @@map("Security_Events")
+}
+
+model SecurityIncident {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String?  @map("user_id") @db.Uuid
+  category          String
+  status            String   @default("open")
+  severity          String   @default("medium")
+  riskScore         Int      @default(0) @map("risk_score")
+  summary           String?
+  recommendedAction String?  @map("recommended_action")
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamp(6)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("Security_Incidents")
+}
+
+model AuthSession {
+  id           BigInt   @id @default(autoincrement())
+  sessionHash  String   @unique @map("session_hash")
+  userId       String?  @map("user_id") @db.Uuid
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  fingerprint  String?
+  revokeReason String?  @map("revoke_reason")
+  expiresAt    DateTime @map("expires_at") @db.Timestamp(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamp(6)
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_auth_sessions_user_created")
+  @@map("Auth_Sessions")
+}
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  userId     String?  @map("user_id") @db.Uuid
+  actorType  String   @default("system") @map("actor_type")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  requestId  String?  @map("request_id")
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_audit_log_user_created")
+  @@map("Audit_Log")
+}

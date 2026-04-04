@@ -13,17 +13,23 @@ function createRateLimiter({ windowMs, max, prefix }) {
     return async function rateLimit(req, res, next) {
         const now = Date.now();
         const key = getKey(req, prefix);
-        const bucket = buckets.get(key);
+        const refillRatePerMs = max / windowMs;
+        const bucket = buckets.get(key) || {
+            tokens: max,
+            lastRefillAt: now
+        };
 
-        if (!bucket || bucket.resetAt <= now) {
-            buckets.set(key, { count: 1, resetAt: now + windowMs });
+        const elapsedMs = now - bucket.lastRefillAt;
+        bucket.tokens = Math.min(max, bucket.tokens + elapsedMs * refillRatePerMs);
+        bucket.lastRefillAt = now;
+
+        if (bucket.tokens >= 1) {
+            bucket.tokens -= 1;
+            buckets.set(key, bucket);
             return next();
         }
 
-        bucket.count += 1;
-        if (bucket.count <= max) {
-            return next();
-        }
+        buckets.set(key, bucket);
 
         try {
             await recordSecurityEvent({
@@ -37,14 +43,15 @@ function createRateLimiter({ windowMs, max, prefix }) {
                     path: req.path,
                     windowMs,
                     max,
-                    observed: bucket.count
+                    observedTokens: bucket.tokens
                 }
             });
         } catch (error) {
             console.error('[rate-limit] failed to record block', error.message);
         }
 
-        res.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000));
+        const retryAfterMs = Math.ceil((1 - bucket.tokens) / refillRatePerMs);
+        res.setHeader('Retry-After', Math.max(1, Math.ceil(retryAfterMs / 1000)));
         return res.status(429).json({
             message: 'Too many requests. Please slow down and try again shortly.'
         });

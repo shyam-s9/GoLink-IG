@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { API_URL } from '../lib/api';
+import { getCsrfToken, csrfPost } from '../lib/csrf';
 
 const AuthContext = createContext();
 
@@ -27,8 +28,13 @@ export const AuthProvider = ({ children }) => {
 
     useEffect(() => {
         fetchUser();
-        // 15-minute refresh logic could be added here
     }, []);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            getCsrfToken().catch(() => {});
+        }
+    }, [isAuthenticated]);
 
     const login = async () => {
         const res = await axios.get(`${API_URL}/auth/url`, { withCredentials: true });
@@ -37,7 +43,7 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            await axios.post(`${API_URL}/auth/logout`, {}, { withCredentials: true });
+            await csrfPost(`${API_URL}/auth/logout`);
         } catch (err) {
             console.error('Logout failed:', err);
         } finally {

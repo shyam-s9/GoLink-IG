@@ -17,12 +17,16 @@ const { importRecentReels, saveReelAutomation } = require('./src/controllers/ree
 const { captureRawBody, validateWebhookSignature } = require('./src/middleware/auth');
 const { attachRequestContext } = require('./src/middleware/requestContext');
 const { authenticateSession } = require('./src/middleware/sessionAuth');
-const { authenticateAdmin } = require('./src/middleware/adminAuth');
 const { createRateLimiter } = require('./src/middleware/rateLimit');
-const { createSessionToken, createStateToken, verifyStateToken, SESSION_TTL_MS } = require('./src/services/sessionService');
+const { requireRole } = require('./src/middleware/rbac');
+const { createSessionToken, SESSION_TTL_MS } = require('./src/services/sessionService');
+const { issueOauthState, isValidOauthState } = require('./src/services/authFlowService');
 const { recordSecurityEvent, getSecurityOverview, listPlatformIncidents, getPlatformSecurityStats, resolveIncident } = require('./src/services/securityAgentService');
 const { writeAuditLog, getAuditTrail } = require('./src/services/auditLogService');
 const { createSession, revokeSession, revokeAllOtherSessions, listUserSessions } = require('./src/services/sessionStoreService');
+const { generateCsrfToken, doubleCsrfProtection, invalidCsrfTokenError } = require('./src/services/csrfService');
+const { registerRecurringJobs } = require('./src/services/maintenanceScheduler');
+const { getSystemHealth } = require('./src/services/systemHealthService');
 
 const PORT = Number(process.env.PORT || 3001);
 const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -31,6 +35,11 @@ const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
 const AUTH_PROVIDER = String(process.env.AUTH_PROVIDER || 'facebook').toLowerCase();
+const ADMIN_PLATFORM_USER_IDS = new Set(
+    [process.env.MASTER_PLATFORM_USER_ID, ...(process.env.ADMIN_PLATFORM_USER_IDS || '').split(',')]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+);
 const CLIENT_STATIC_DIR = path.join(__dirname, 'client', 'out');
 const CLIENT_INDEX_FILE = path.join(CLIENT_STATIC_DIR, 'index.html');
 const generalRateLimit = createRateLimiter({ windowMs: 60 * 1000, max: 120, prefix: 'general' });
@@ -94,6 +103,10 @@ function clearCookie(res, name) {
 
 function sanitizeDisplayName(name) {
     return String(name || 'Creator').replace(/[^a-zA-Z0-9\s._-]/g, '').trim().slice(0, 80) || 'Creator';
+}
+
+function determineUserRole(platformUserId) {
+    return ADMIN_PLATFORM_USER_IDS.has(String(platformUserId)) ? 'ADMIN' : 'CUSTOMER';
 }
 
 function buildAuthUrl(state) {
@@ -177,138 +190,14 @@ async function resolvePlatformAccount(longLivedToken) {
 }
 
 async function initializeDatabase() {
-    await db.query(`
-        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-        CREATE TABLE IF NOT EXISTS Users (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            platform_user_id VARCHAR UNIQUE NOT NULL,
-            full_name VARCHAR,
-            access_token TEXT NOT NULL,
-            is_active BOOLEAN DEFAULT true,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            last_login_at TIMESTAMP,
-            last_login_ip VARCHAR,
-            last_security_scan_at TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS Reels_Automation (
-            id SERIAL PRIMARY KEY,
-            user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
-            reel_id VARCHAR NOT NULL,
-            trigger_keyword VARCHAR NOT NULL,
-            public_reply_text TEXT,
-            affiliate_link TEXT NOT NULL,
-            is_enabled BOOLEAN DEFAULT true,
-            total_delivered INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Analytics (
-            id SERIAL PRIMARY KEY,
-            automation_id INTEGER REFERENCES Reels_Automation(id) ON DELETE CASCADE,
-            follower_platform_id VARCHAR,
-            action_type VARCHAR,
-            sentiment_score FLOAT,
-            sentiment_label VARCHAR,
-            timestamp TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Leads (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
-            platform_handle VARCHAR,
-            email VARCHAR,
-            lead_score INTEGER DEFAULT 0,
-            source VARCHAR DEFAULT 'PLATFORM_AUTOMATION',
-            status VARCHAR DEFAULT 'NEW',
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Customer_Security_Posture (
-            user_id UUID PRIMARY KEY REFERENCES Users(id) ON DELETE CASCADE,
-            risk_level VARCHAR DEFAULT 'normal',
-            last_risk_score INTEGER DEFAULT 0,
-            suspicious_request_count INTEGER DEFAULT 0,
-            blocked_request_count INTEGER DEFAULT 0,
-            compromised_signals INTEGER DEFAULT 0,
-            last_incident_at TIMESTAMP,
-            last_seen_at TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Security_Events (
-            id BIGSERIAL PRIMARY KEY,
-            user_id UUID REFERENCES Users(id) ON DELETE SET NULL,
-            actor_type VARCHAR DEFAULT 'anonymous',
-            event_type VARCHAR NOT NULL,
-            severity VARCHAR DEFAULT 'low',
-            risk_score INTEGER DEFAULT 0,
-            blocked BOOLEAN DEFAULT false,
-            ip_address VARCHAR,
-            user_agent TEXT,
-            fingerprint VARCHAR,
-            details JSONB DEFAULT '{}'::jsonb,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Security_Incidents (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
-            category VARCHAR NOT NULL,
-            status VARCHAR DEFAULT 'open',
-            severity VARCHAR DEFAULT 'medium',
-            risk_score INTEGER DEFAULT 0,
-            summary TEXT,
-            recommended_action TEXT,
-            metadata JSONB DEFAULT '{}'::jsonb,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Auth_Sessions (
-            id BIGSERIAL PRIMARY KEY,
-            session_hash VARCHAR UNIQUE NOT NULL,
-            user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
-            ip_address VARCHAR,
-            user_agent TEXT,
-            fingerprint VARCHAR,
-            revoke_reason VARCHAR,
-            expires_at TIMESTAMP NOT NULL,
-            revoked_at TIMESTAMP,
-            last_seen_at TIMESTAMP DEFAULT NOW(),
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS Audit_Log (
-            id BIGSERIAL PRIMARY KEY,
-            user_id UUID REFERENCES Users(id) ON DELETE SET NULL,
-            actor_type VARCHAR DEFAULT 'system',
-            action VARCHAR NOT NULL,
-            target_type VARCHAR,
-            target_id VARCHAR,
-            request_id VARCHAR,
-            metadata JSONB DEFAULT '{}'::jsonb,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        ALTER TABLE Users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
-        ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR;
-        ALTER TABLE Users ADD COLUMN IF NOT EXISTS last_security_scan_at TIMESTAMP;
-        ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS user_id UUID;
-        ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS public_reply_text TEXT;
-        ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE Analytics ADD COLUMN IF NOT EXISTS sentiment_score FLOAT;
-        ALTER TABLE Analytics ADD COLUMN IF NOT EXISTS sentiment_label VARCHAR;
-        ALTER TABLE Leads ADD COLUMN IF NOT EXISTS source VARCHAR DEFAULT 'PLATFORM_AUTOMATION';
-        ALTER TABLE Leads ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'NEW';
-    `);
+    await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
 
     await db.query(`ALTER TABLE Users RENAME COLUMN ig_user_id TO platform_user_id;`).catch(() => {});
     await db.query(`ALTER TABLE Analytics RENAME COLUMN follower_ig_id TO follower_platform_id;`).catch(() => {});
     await db.query(`ALTER TABLE Leads RENAME COLUMN ig_handle TO platform_handle;`).catch(() => {});
+    await db.query(`ALTER TABLE Users ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'CUSTOMER';`).catch(() => {});
+    await db.query(`ALTER TABLE Users ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMP;`).catch(() => {});
+    await db.query(`ALTER TABLE Reels_Automation ADD COLUMN IF NOT EXISTS user_id UUID;`).catch(() => {});
     await db.query(`ALTER TABLE Reels_Automation ADD CONSTRAINT reels_automation_user_id_fkey FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE;`).catch(() => {});
 
     await db.query('CREATE INDEX IF NOT EXISTS idx_security_events_user_created ON Security_Events(user_id, created_at DESC)');
@@ -327,9 +216,9 @@ async function bootstrapMasterAccount() {
 
     const encryptedToken = encrypt(masterToken);
     await db.query(
-        `INSERT INTO Users (platform_user_id, full_name, access_token, updated_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (platform_user_id) DO UPDATE SET access_token = $3, updated_at = NOW()`,
+        `INSERT INTO Users (platform_user_id, full_name, access_token, role, token_expires_at, updated_at)
+         VALUES ($1, $2, $3, 'ADMIN', NOW() + INTERVAL '60 days', NOW())
+         ON CONFLICT (platform_user_id) DO UPDATE SET access_token = $3, role = 'ADMIN', token_expires_at = NOW() + INTERVAL '60 days', updated_at = NOW()`,
         [masterId, 'Master Admin', encryptedToken]
     );
 }
@@ -381,6 +270,14 @@ app.get('/health', async (req, res) => {
         time: dbCheck.rows[0].now,
         undercoverSecurityAgent: 'active'
     });
+});
+
+app.get('/api/csrf-token', async (req, res) => {
+    const csrfToken = generateCsrfToken(req, res, {
+        overwrite: true,
+        validateOnReuse: false
+    });
+    res.json({ csrfToken });
 });
 
 app.get('/', (req, res) => {
@@ -490,7 +387,7 @@ small { color: var(--muted); }
 });
 
 app.get('/auth/url', authRateLimit, async (req, res) => {
-    const state = createStateToken({ nonce: crypto.randomUUID(), requestId: req.requestId });
+    const state = issueOauthState(req.requestId);
     setCookie(res, 'oauth_state', state, {
         httpOnly: true,
         maxAge: 10 * 60 * 1000,
@@ -519,7 +416,7 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
     const { code, state } = req.query;
     const stateCookie = req.cookies.oauth_state;
 
-    if (!code || !state || !stateCookie || state !== stateCookie || !verifyStateToken(state)) {
+    if (!code || !isValidOauthState(state, stateCookie)) {
         await recordSecurityEvent({
             req,
             eventType: 'oauth-state-mismatch',
@@ -550,19 +447,22 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
         const platformUserId = account.platformUserId;
         const fullName = account.fullName;
         const encryptedToken = encrypt(longLivedToken);
+        const role = determineUserRole(platformUserId);
 
         const userQuery = await db.query(
-            `INSERT INTO Users (platform_user_id, full_name, access_token, updated_at, last_login_at, last_login_ip, last_security_scan_at)
-             VALUES ($1, $2, $3, NOW(), NOW(), $4, NOW())
+            `INSERT INTO Users (platform_user_id, full_name, access_token, role, token_expires_at, updated_at, last_login_at, last_login_ip, last_security_scan_at)
+             VALUES ($1, $2, $3, $4, NOW() + INTERVAL '60 days', NOW(), NOW(), $5, NOW())
              ON CONFLICT (platform_user_id) DO UPDATE SET
                 full_name = EXCLUDED.full_name,
                 access_token = EXCLUDED.access_token,
+                role = EXCLUDED.role,
+                token_expires_at = NOW() + INTERVAL '60 days',
                 updated_at = NOW(),
                 last_login_at = NOW(),
                 last_login_ip = EXCLUDED.last_login_ip,
                 last_security_scan_at = NOW()
-             RETURNING id, platform_user_id, full_name`,
-            [platformUserId, fullName, encryptedToken, req.headers['x-forwarded-for'] || req.socket.remoteAddress || null]
+             RETURNING id, platform_user_id, full_name, role`,
+            [platformUserId, fullName, encryptedToken, role, req.headers['x-forwarded-for'] || req.socket.remoteAddress || null]
         );
 
         const user = userQuery.rows[0];
@@ -576,6 +476,7 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
             userId: user.id,
             platformUserId: user.platform_user_id,
             fullName: user.full_name,
+            role: user.role,
             sessionId
         });
 
@@ -622,7 +523,7 @@ app.get('/auth/callback', authRateLimit, async (req, res) => {
     }
 });
 
-app.post('/auth/logout', authenticateSession, async (req, res) => {
+app.post('/auth/logout', authenticateSession, doubleCsrfProtection, async (req, res) => {
     await revokeSession(req.user.sessionId, 'customer-logout');
     clearCookie(res, 'auth_token');
     await recordSecurityEvent({
@@ -644,7 +545,7 @@ app.post('/auth/logout', authenticateSession, async (req, res) => {
 
 app.get('/api/me', authenticateSession, async (req, res) => {
     const userQuery = await db.query(
-        'SELECT id, platform_user_id, full_name, is_active, last_login_at, last_security_scan_at FROM Users WHERE id = $1',
+        'SELECT id, platform_user_id, full_name, role, is_active, last_login_at, last_security_scan_at FROM Users WHERE id = $1',
         [req.user.userId]
     );
 
@@ -657,6 +558,7 @@ app.get('/api/me', authenticateSession, async (req, res) => {
             id: userQuery.rows[0].id,
             platformUserId: userQuery.rows[0].platform_user_id,
             fullName: userQuery.rows[0].full_name,
+            role: userQuery.rows[0].role,
             isActive: userQuery.rows[0].is_active,
             lastLoginAt: userQuery.rows[0].last_login_at,
             lastSecurityScanAt: userQuery.rows[0].last_security_scan_at
@@ -665,7 +567,7 @@ app.get('/api/me', authenticateSession, async (req, res) => {
 });
 
 app.get('/api/reels/import', authenticateSession, importRecentReels);
-app.post('/api/reels/save', authenticateSession, saveReelAutomation);
+app.post('/api/reels/save', authenticateSession, doubleCsrfProtection, saveReelAutomation);
 
 app.get('/api/security/overview', authenticateSession, securityRateLimit, async (req, res) => {
     const overview = await getSecurityOverview(req.user.userId);
@@ -710,7 +612,7 @@ app.get('/api/security/sessions', authenticateSession, securityRateLimit, async 
     });
 });
 
-app.post('/api/security/sessions/revoke-others', authenticateSession, securityRateLimit, async (req, res) => {
+app.post('/api/security/sessions/revoke-others', authenticateSession, securityRateLimit, doubleCsrfProtection, async (req, res) => {
     const revokedCount = await revokeAllOtherSessions(req.user.userId, req.user.sessionId, 'customer-security-hardening');
     await writeAuditLog({
         userId: req.user.userId,
@@ -729,7 +631,7 @@ app.get('/api/security/audit-trail', authenticateSession, securityRateLimit, asy
     res.json({ logs });
 });
 
-app.post('/api/security/incidents/:incidentId/resolve', authenticateSession, securityRateLimit, async (req, res) => {
+app.post('/api/security/incidents/:incidentId/resolve', authenticateSession, securityRateLimit, doubleCsrfProtection, async (req, res) => {
     const incident = await resolveIncident(req.user.userId, req.params.incidentId, req.body?.note);
     if (!incident) {
         return res.status(404).json({ message: 'Incident not found.' });
@@ -747,7 +649,7 @@ app.post('/api/security/incidents/:incidentId/resolve', authenticateSession, sec
     res.json({ ok: true, incident });
 });
 
-app.get('/api/admin/security/overview', authenticateAdmin, adminRateLimit, async (req, res) => {
+app.get('/api/admin/security/overview', authenticateSession, requireRole('ADMIN', 'ANALYST'), adminRateLimit, async (req, res) => {
     const [stats, incidents] = await Promise.all([
         getPlatformSecurityStats(),
         listPlatformIncidents(20)
@@ -762,7 +664,18 @@ app.get('/api/admin/security/overview', authenticateAdmin, adminRateLimit, async
     res.json({ stats, incidents });
 });
 
-app.post('/api/admin/users/:userId/security-lock', authenticateAdmin, adminRateLimit, async (req, res) => {
+app.get('/api/admin/system-health', authenticateSession, requireRole('ADMIN', 'ANALYST'), adminRateLimit, async (req, res) => {
+    const systemHealth = await getSystemHealth();
+    await writeAuditLog({
+        userId: req.user.userId,
+        actorType: 'admin',
+        action: 'admin.view_system_health',
+        requestId: req.requestId
+    });
+    res.json(systemHealth);
+});
+
+app.post('/api/admin/users/:userId/security-lock', authenticateSession, requireRole('ADMIN'), adminRateLimit, doubleCsrfProtection, async (req, res) => {
     const { lock = true, note = null } = req.body || {};
     const result = await db.query(
         `UPDATE Users
@@ -900,6 +813,10 @@ if (hasBuiltClient()) {
 }
 
 app.use(async (err, req, res, next) => {
+    if (err === invalidCsrfTokenError || err?.code === 'EBADCSRFTOKEN') {
+        return res.status(403).json({ message: 'Invalid CSRF token.' });
+    }
+
     console.error('[server] unhandled route error', err);
     try {
         await recordSecurityEvent({
@@ -919,6 +836,7 @@ async function start() {
     ensureEnv();
     await initializeDatabase();
     await bootstrapMasterAccount();
+    await registerRecurringJobs();
 
     server.listen(PORT, () => {
         console.log(`[server] GoLink security backend listening on ${PORT}`);

@@ -43,7 +43,7 @@ async function authenticateSession(req, res, next) {
         return res.status(403).json({ message: 'Session has been revoked.' });
     }
 
-    const userStatus = await db.query('SELECT is_active FROM Users WHERE id = $1', [payload.userId]);
+    const userStatus = await db.query('SELECT is_active, role FROM Users WHERE id = $1', [payload.userId]);
     if (!userStatus.rows.length || userStatus.rows[0].is_active === false) {
         await recordSecurityEvent({
             req,
@@ -60,6 +60,7 @@ async function authenticateSession(req, res, next) {
     await touchSession(payload.sessionId);
     req.user = {
         ...payload,
+        role: userStatus.rows[0].role || payload.role || 'CUSTOMER',
         sessionDbId: activeSession.id,
         sessionFingerprint: activeSession.fingerprint
     };
