@@ -87,14 +87,16 @@ To avoid destructive resets and to prevent `P3005` on first deploy, the runtime 
 1. runs [mark-baseline.sh](/D:/GoLink%20IG/GoLink%20IG%20New/prisma/mark-baseline.sh)
 2. marks `20260404000000_initial_baseline` as applied if it is not already recorded
 3. marks `20260404120000_align_prisma_role_varchar` as applied if it is not already recorded
-4. runs `prisma migrate deploy`
-5. starts the Node process
+4. marks `20260404130000_add_platform_config` as rolled back if Prisma recorded it in a failed state during an earlier deploy
+5. runs `prisma migrate deploy`
+6. starts the Node process
 
 Important notes:
 - this does not drop or alter existing application data
 - it is intended to reconcile Prisma migration history with an already-populated database
 - once the baseline is recorded, subsequent deploys should continue through normal `prisma migrate deploy`
 - Render uses `npm run start:render` through the Docker CMD so this sequence happens automatically on deploy
+- the failed-state recovery step exists because Prisma will block future deploys with `P3009` if an otherwise idempotent migration was interrupted or partially recorded as failed
 
 ## 4. Codebase Layout
 
